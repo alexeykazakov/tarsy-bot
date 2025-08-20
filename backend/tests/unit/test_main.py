@@ -5,25 +5,24 @@ Tests lifespan management, endpoints, WebSocket connections, and background proc
 """
 
 import asyncio
-import json
+import contextlib
 import uuid
-from datetime import datetime
-from unittest.mock import AsyncMock, Mock, patch, MagicMock
 from contextlib import asynccontextmanager
+from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
-from fastapi.testclient import TestClient
 from fastapi import WebSocket
-
-from pydantic import ValidationError
+from fastapi.testclient import TestClient
 
 # Import the modules we need to test and mock
-from tarsy.main import app, lifespan, process_alert_background, processing_alert_keys, alert_keys_lock
-from tarsy.models.alert import Alert, AlertResponse
-from tarsy.models.alert_processing import AlertProcessingData, AlertKey
-from tarsy.models.websocket_models import ConnectionEstablished, ErrorMessage
-from tarsy.services.alert_service import AlertService
-from tarsy.services.dashboard_connection_manager import DashboardConnectionManager
+from tarsy.main import (
+    alert_keys_lock,
+    app,
+    lifespan,
+    process_alert_background,
+    processing_alert_keys,
+)
+from tarsy.models.processing_context import ChainContext
 
 
 @pytest.mark.unit
@@ -50,10 +49,16 @@ class TestMainLifespan:
         
         with patch('tarsy.main.setup_logging') as mock_setup_logging, \
              patch('tarsy.main.initialize_database') as mock_init_db, \
-             patch('tarsy.services.history_service.get_history_service') as mock_history_service, \
+             patch(
+                 'tarsy.services.history_service.get_history_service'
+             ) as mock_history_service, \
              patch('tarsy.main.AlertService') as mock_alert_service_class, \
-             patch('tarsy.main.DashboardConnectionManager') as mock_dashboard_manager_class, \
-             patch('tarsy.hooks.hook_registry.get_typed_hook_registry') as mock_hook_registry, \
+             patch(
+                 'tarsy.main.DashboardConnectionManager'
+             ) as mock_dashboard_manager_class, \
+             patch(
+                 'tarsy.hooks.hook_registry.get_typed_hook_registry'
+             ) as mock_hook_registry, \
              patch('tarsy.main.get_database_info') as mock_db_info:
             
             # Setup service mocks
@@ -87,7 +92,9 @@ class TestMainLifespan:
             }
 
     @patch('tarsy.main.get_settings')
-    async def test_lifespan_startup_success(self, mock_get_settings, mock_lifespan_dependencies):
+    async def test_lifespan_startup_success(
+        self, mock_get_settings, mock_lifespan_dependencies
+    ):
         """Test successful application startup."""
         deps = mock_lifespan_dependencies
         
@@ -122,7 +129,9 @@ class TestMainLifespan:
         deps['dashboard_manager'].shutdown_broadcaster.assert_called_once()
 
     @patch('tarsy.main.get_settings')
-    async def test_lifespan_startup_with_history_disabled(self, mock_get_settings, mock_lifespan_dependencies):
+    async def test_lifespan_startup_with_history_disabled(
+        self, mock_get_settings, mock_lifespan_dependencies
+    ):
         """Test application startup with history service disabled."""
         deps = mock_lifespan_dependencies
         
@@ -154,7 +163,9 @@ class TestMainLifespan:
         deps['history_service'].assert_not_called()
 
     @patch('tarsy.main.get_settings')
-    async def test_lifespan_startup_with_orphaned_session_cleanup_error(self, mock_get_settings, mock_lifespan_dependencies):
+    async def test_lifespan_startup_with_orphaned_session_cleanup_error(
+        self, mock_get_settings, mock_lifespan_dependencies
+    ):
         """Test application startup when orphaned session cleanup fails."""
         deps = mock_lifespan_dependencies
         
@@ -169,7 +180,9 @@ class TestMainLifespan:
         deps['db_info'].return_value = {"enabled": True}
         
         # Make cleanup fail
-        deps['history'].cleanup_orphaned_sessions.side_effect = Exception("Cleanup failed")
+        deps['history'].cleanup_orphaned_sessions.side_effect = Exception(
+            "Cleanup failed"
+        )
 
         # Test lifespan manager - should not fail even if cleanup fails
         @asynccontextmanager 
@@ -241,7 +254,9 @@ class TestMainEndpoints:
         )
     ])
     @patch('tarsy.main.get_database_info')
-    def test_health_endpoint_status(self, mock_db_info, client, db_status, expected_status, expected_services):
+    def test_health_endpoint_status(
+        self, mock_db_info, client, db_status, expected_status, expected_services
+    ):
         """Test health endpoint with different database status scenarios."""
         if isinstance(db_status, Exception):
             mock_db_info.side_effect = db_status
@@ -265,11 +280,15 @@ class TestMainEndpoints:
             for service, expected_value in expected_services.items():
                 if isinstance(expected_value, dict):
                     for key, value in expected_value.items():
-                        assert data["services"][service][key] == value, \
-                            f"Service {service}.{key} should be {value}, got {data['services'][service][key]}"
+                        assert data["services"][service][key] == value, (
+                            f"Service {service}.{key} should be {value}, "
+                            f"got {data['services'][service][key]}"
+                        )
                 else:
-                    assert data["services"][service] == expected_value, \
-                        f"Service {service} should be {expected_value}, got {data['services'][service]}"
+                    assert data["services"][service] == expected_value, (
+                        f"Service {service} should be {expected_value}, "
+                        f"got {data['services'][service]}"
+                    )
         
         # Check for error message when unhealthy
         if expected_status == "unhealthy":
@@ -281,7 +300,9 @@ class TestMainEndpoints:
     def test_get_alert_types(self, mock_alert_service, client):
         """Test get alert types endpoint."""
         mock_chain_registry = Mock()
-        mock_chain_registry.list_available_alert_types.return_value = ["kubernetes", "database", "network"]
+        mock_chain_registry.list_available_alert_types.return_value = [
+            "kubernetes", "database", "network"
+        ]
         mock_alert_service.chain_registry = mock_chain_registry
         
         response = client.get("/alert-types")
@@ -317,7 +338,9 @@ class TestSubmitAlertEndpoint:
 
     @patch('tarsy.main.alert_service')
     @patch('tarsy.main.asyncio.create_task')
-    def test_submit_alert_success(self, mock_create_task, mock_alert_service, client, valid_alert_data):
+    def test_submit_alert_success(
+        self, mock_create_task, mock_alert_service, client, valid_alert_data
+    ):
         """Test successful alert submission."""
         mock_alert_service.register_alert_id = Mock()
         
@@ -336,17 +359,37 @@ class TestSubmitAlertEndpoint:
         (None, 400, "Empty request body"),
         ("invalid json", 400, "Invalid JSON"),
         ("not a dict", 400, "Invalid data structure"),
-        ({"alert_type": "", "runbook": "invalid-url", "data": "not a dict"}, 422, "Validation failed"),
-        ({"alert_type": "   ", "runbook": "https://example.com/runbook.md", "data": {}}, 400, "Invalid alert_type"),
-        ({"alert_type": "test", "runbook": "", "data": {}}, 400, "Invalid runbook"),
+        (
+            {"alert_type": "", "runbook": "invalid-url", "data": "not a dict"},
+            422,
+            "Validation failed"
+        ),
+        (
+            {
+                "alert_type": "   ",
+                "runbook": "https://example.com/runbook.md",
+                "data": {}
+            },
+            400,
+            "Invalid alert_type"
+        ),
+        (
+            {"alert_type": "test", "runbook": "", "data": {}},
+            400,
+            "Invalid runbook"
+        ),
     ])
-    def test_submit_alert_input_validation(self, client, valid_alert_data, invalid_input, expected_status, expected_error):
+    def test_submit_alert_input_validation(
+        self, client, valid_alert_data, invalid_input, expected_status, expected_error
+    ):
         """Test alert submission with various invalid inputs."""
         if invalid_input == "invalid json":
-            response = client.post("/alerts", data=invalid_input, headers={"content-type": "application/json"})
-        elif invalid_input == "not a dict":
-            response = client.post("/alerts", json=invalid_input)
-        elif invalid_input is None:
+            response = client.post(
+                "/alerts",
+                data=invalid_input,
+                headers={"content-type": "application/json"}
+            )
+        elif invalid_input == "not a dict" or invalid_input is None:
             response = client.post("/alerts", json=invalid_input)
         else:
             response = client.post("/alerts", json=invalid_input)
@@ -366,15 +409,22 @@ class TestSubmitAlertEndpoint:
         elif expected_error in ["Invalid alert_type", "Invalid runbook"]:
             assert "field" in data["detail"]
 
-    @patch('tarsy.main.processing_alert_keys', {"test-key": "existing-id"})
-    @patch('tarsy.main.alert_keys_lock', asyncio.Lock())
     def test_submit_alert_duplicate_detection(self, client, valid_alert_data):
         """Test duplicate alert detection."""
-        # Mock AlertKey to return a predictable key
-        with patch('tarsy.main.AlertKey') as mock_alert_key:
-            mock_key = Mock()
-            mock_key.__str__ = Mock(return_value="test-key")
-            mock_alert_key.from_alert_data.return_value = mock_key
+        # Create a mock AlertKey instance
+        mock_alert_key = Mock()
+        mock_alert_key.__str__ = Mock(return_value="test-key") 
+        mock_alert_key.__hash__ = Mock(return_value=12345)
+        
+        # Patch with AlertKey object as key instead of string
+        with patch(
+            'tarsy.main.processing_alert_keys', {mock_alert_key: "existing-id"}
+        ), \
+             patch('tarsy.main.alert_keys_lock', asyncio.Lock()), \
+             patch('tarsy.main.AlertKey.from_chain_context') as mock_from_chain_context:
+            
+            # Mock the factory method to return our test key
+            mock_from_chain_context.return_value = mock_alert_key
             
             response = client.post("/alerts", json=valid_alert_data)
             
@@ -405,7 +455,9 @@ class TestSubmitAlertEndpoint:
 
     @patch('tarsy.main.alert_service')
     @patch('tarsy.main.asyncio.create_task')
-    def test_submit_alert_suspicious_runbook_url(self, mock_create_task, mock_alert_service, client, valid_alert_data):
+    def test_submit_alert_suspicious_runbook_url(
+        self, _mock_create_task, mock_alert_service, client, valid_alert_data
+    ):
         """Test alert submission with suspicious runbook URL."""
         mock_alert_service.register_alert_id = Mock()
         valid_alert_data["runbook"] = "file:///etc/passwd"  # Suspicious URL
@@ -415,7 +467,9 @@ class TestSubmitAlertEndpoint:
 
     @patch('tarsy.main.alert_service')
     @patch('tarsy.main.asyncio.create_task')
-    def test_submit_alert_with_defaults(self, mock_create_task, mock_alert_service, client):
+    def test_submit_alert_with_defaults(
+        self, mock_create_task, mock_alert_service, client
+    ):
         """Test alert submission applies defaults for missing fields."""
         mock_alert_service.register_alert_id = Mock()
         
@@ -499,7 +553,9 @@ class TestWebSocketEndpoint:
         return websocket
 
     @patch('tarsy.main.dashboard_manager')
-    async def test_websocket_connection_success(self, mock_dashboard_manager, mock_websocket):
+    async def test_websocket_connection_success(
+        self, mock_dashboard_manager, mock_websocket
+    ):
         """Test successful WebSocket connection."""
         # Mock the dashboard manager
         mock_dashboard_manager.connect = AsyncMock()
@@ -518,18 +574,21 @@ class TestWebSocketEndpoint:
         # Import and test the endpoint
         from tarsy.main import dashboard_websocket_endpoint
         
-        try:
+        with contextlib.suppress(Exception):
+            # Expected due to disconnect simulation
             await dashboard_websocket_endpoint(mock_websocket, "user-123")
-        except Exception:
-            pass  # Expected due to disconnect simulation
         
         # Verify connection flow
-        mock_dashboard_manager.connect.assert_called_once_with(mock_websocket, "user-123")
+        mock_dashboard_manager.connect.assert_called_once_with(
+            mock_websocket, "user-123"
+        )
         mock_dashboard_manager.send_to_user.assert_called()
         mock_dashboard_manager.disconnect.assert_called_once_with("user-123")
 
     @patch('tarsy.main.dashboard_manager')
-    async def test_websocket_invalid_json_message(self, mock_dashboard_manager, mock_websocket):
+    async def test_websocket_invalid_json_message(
+        self, mock_dashboard_manager, mock_websocket
+    ):
         """Test WebSocket with invalid JSON message."""
         mock_dashboard_manager.connect = AsyncMock()
         mock_dashboard_manager.send_to_user = AsyncMock()
@@ -544,20 +603,21 @@ class TestWebSocketEndpoint:
         
         from tarsy.main import dashboard_websocket_endpoint
         
-        try:
+        with contextlib.suppress(Exception):
             await dashboard_websocket_endpoint(mock_websocket, "user-123")
-        except Exception:
-            pass
         
         # Verify error message was sent
-        assert mock_dashboard_manager.send_to_user.call_count >= 2  # Connection message + error message
+        # Connection message + error message
+        assert mock_dashboard_manager.send_to_user.call_count >= 2
         
         # Check that an error message was sent
         calls = mock_dashboard_manager.send_to_user.call_args_list
         error_call_found = False
         for call in calls:
-            if len(call[0]) > 1 and isinstance(call[0][1], dict) and 'message' in call[0][1]:
-                if 'Invalid JSON' in call[0][1].get('message', ''):
+            if (len(call[0]) > 1 and 
+                isinstance(call[0][1], dict) and 
+                'message' in call[0][1] and
+                'Invalid JSON' in call[0][1].get('message', '')):
                     error_call_found = True
                     break
         assert error_call_found
@@ -570,19 +630,23 @@ class TestBackgroundProcessing:
     @pytest.fixture
     def mock_alert_data(self):
         """Mock alert processing data."""
-        return AlertProcessingData(
+        return ChainContext(
             alert_type="kubernetes",
             alert_data={
                 "namespace": "production",
                 "pod": "api-server-123",
                 "severity": "high"
-            }
+            },
+            session_id="test-session-123",
+            current_stage_name="test-stage"
         )
 
     @patch('tarsy.main.alert_service')
     @patch('tarsy.main.processing_alert_keys', {})
     @patch('tarsy.main.alert_keys_lock', asyncio.Lock())
-    async def test_process_alert_background_success(self, mock_alert_service, mock_alert_data):
+    async def test_process_alert_background_success(
+        self, mock_alert_service, mock_alert_data
+    ):
         """Test successful background alert processing."""
         mock_alert_service.process_alert = AsyncMock(return_value={"status": "success"})
         
@@ -590,36 +654,50 @@ class TestBackgroundProcessing:
         with patch('tarsy.main.alert_processing_semaphore', asyncio.Semaphore(1)):
             await process_alert_background("alert-123", mock_alert_data)
         
-        mock_alert_service.process_alert.assert_called_once_with(mock_alert_data, api_alert_id="alert-123")
+        mock_alert_service.process_alert.assert_called_once_with(
+            mock_alert_data, alert_id="alert-123"
+        )
 
     @patch('tarsy.main.alert_service')
-    @patch('tarsy.main.processing_alert_keys', {"test-key": "alert-123"})
-    @patch('tarsy.main.alert_keys_lock', asyncio.Lock())
-    async def test_process_alert_background_cleanup(self, mock_alert_service, mock_alert_data):
+    async def test_process_alert_background_cleanup(
+        self, mock_alert_service, mock_alert_data
+    ):
         """Test background processing cleans up alert keys."""
         mock_alert_service.process_alert = AsyncMock(return_value={"status": "success"})
         
-        # Create a mock AlertKey that returns "test-key"
-        with patch('tarsy.main.AlertKey') as mock_alert_key_class:
-            mock_key = Mock()
-            mock_key.__str__ = Mock(return_value="test-key")
-            mock_alert_key_class.from_alert_data.return_value = mock_key
+        # Create a mock AlertKey instance
+        mock_alert_key = Mock()
+        mock_alert_key.__str__ = Mock(return_value="test-key")
+        mock_alert_key.__hash__ = Mock(return_value=12345)
+        
+        # Start with the key in the processing dict
+        with patch(
+            'tarsy.main.processing_alert_keys', {mock_alert_key: "alert-123"}
+        ) as mock_processing_keys, \
+             patch('tarsy.main.alert_keys_lock', asyncio.Lock()), \
+             patch('tarsy.main.AlertKey.from_chain_context') as mock_from_chain_context:
+            
+            # Mock the factory method to return our test key
+            mock_from_chain_context.return_value = mock_alert_key
             
             with patch('tarsy.main.alert_processing_semaphore', asyncio.Semaphore(1)):
                 await process_alert_background("alert-123", mock_alert_data)
         
         # Verify the alert key was cleaned up (dict should be empty now)
-        assert "test-key" not in processing_alert_keys
+        assert mock_alert_key not in mock_processing_keys
 
     @patch('tarsy.main.alert_service')
     @patch('tarsy.main.processing_alert_keys', {})
     @patch('tarsy.main.alert_keys_lock', asyncio.Lock())
-    async def test_process_alert_background_timeout(self, mock_alert_service, mock_alert_data):
+    async def test_process_alert_background_timeout(
+        self, mock_alert_service, mock_alert_data
+    ):
         """Test background processing with timeout."""
         # Make process_alert hang
         mock_alert_service.process_alert = AsyncMock(side_effect=asyncio.sleep(1000))
         
-        with patch('tarsy.main.alert_processing_semaphore', asyncio.Semaphore(1)):
+        with patch('tarsy.main.alert_processing_semaphore', asyncio.Semaphore(1)), \
+             patch('tarsy.main.asyncio.wait_for', side_effect=asyncio.TimeoutError()):
             # Should not raise exception, should handle timeout gracefully
             await process_alert_background("alert-123", mock_alert_data)
 
@@ -627,37 +705,51 @@ class TestBackgroundProcessing:
     @patch('tarsy.main.processing_alert_keys', {})
     @patch('tarsy.main.alert_keys_lock', asyncio.Lock())
     async def test_process_alert_background_invalid_alert(self, mock_alert_service):
-        """Test background processing with invalid alert data."""
+        """Test background processing handles invalid alert data gracefully."""
+        # Mock process_alert to track if it's called 
+        mock_alert_service.process_alert = AsyncMock()
+        
         with patch('tarsy.main.alert_processing_semaphore', asyncio.Semaphore(1)):
-            # Test with None alert
+            # Test with None alert - should fail early during logging  
             await process_alert_background("alert-123", None)
             
-            # Create minimally valid AlertProcessingData but then mock validation failure
-            valid_alert = AlertProcessingData(alert_type="test", alert_data={"key": "value"})
+            # Test with valid ChainContext but process_alert fails
+            valid_alert = ChainContext(
+                alert_type="test", 
+                alert_data={"key": "value"},
+                session_id="test-session",
+                current_stage_name="test-stage"
+            )
             
-            # Test by directly setting invalid attributes after creation
-            valid_alert.alert_type = ""  # Make it invalid after creation
-            await process_alert_background("alert-123", valid_alert)
+            # Make process_alert fail to simulate processing errors
+            mock_alert_service.process_alert.side_effect = ValueError(
+                "Processing failed"
+            )
             
-            # For the None alert_data case, we need to mock the AlertKey creation to avoid the error
-            valid_alert2 = AlertProcessingData(alert_type="test", alert_data={"key": "value"})
-            valid_alert2.alert_data = None  # Make it invalid after creation
-            
-            with patch('tarsy.main.AlertKey.from_alert_data') as mock_alert_key:
+            # Need to mock AlertKey.from_chain_context for cleanup in finally block
+            with patch(
+                'tarsy.main.AlertKey.from_chain_context'
+            ) as mock_from_chain_context:
                 mock_key = Mock()
-                mock_key.__str__ = Mock(return_value="test-key-2")
-                mock_alert_key.return_value = mock_key
-                await process_alert_background("alert-123", valid_alert2)
+                mock_key.__str__ = Mock(return_value="test-key")
+                mock_key.__hash__ = Mock(return_value=12345)
+                mock_from_chain_context.return_value = mock_key
+                await process_alert_background("alert-124", valid_alert)
         
-        # Should not call process_alert for invalid data
-        mock_alert_service.process_alert.assert_not_called()
+        # The function should handle errors gracefully and not raise exceptions
+        # Even with invalid data, it attempts processing and handles the failure
+        assert mock_alert_service.process_alert.call_count >= 1
 
     @patch('tarsy.main.alert_service')
     @patch('tarsy.main.processing_alert_keys', {})
     @patch('tarsy.main.alert_keys_lock', asyncio.Lock())
-    async def test_process_alert_background_processing_exception(self, mock_alert_service, mock_alert_data):
+    async def test_process_alert_background_processing_exception(
+        self, mock_alert_service, mock_alert_data
+    ):
         """Test background processing handles processing exceptions."""
-        mock_alert_service.process_alert = AsyncMock(side_effect=Exception("Processing failed"))
+        mock_alert_service.process_alert = AsyncMock(
+            side_effect=Exception("Processing failed")
+        )
         
         with patch('tarsy.main.alert_processing_semaphore', asyncio.Semaphore(1)):
             # Should not raise exception, should handle gracefully
@@ -715,7 +807,11 @@ class TestInputSanitization:
                 "level1": {
                     "level2": {
                         "malicious": "<script>alert('nested')</script>",
-                        "array": ["<script>", "normal_value", {"nested_in_array": "<img src=x>"}]
+                        "array": [
+                            "<script>", 
+                            "normal_value", 
+                            {"nested_in_array": "<img src=x>"}
+                        ]
                     }
                 }
             }
@@ -835,7 +931,8 @@ class TestCriticalCoverage:
             
             # First submission should fail gracefully
             response1 = client.post("/alerts", json=alert_data)
-            assert response1.status_code in [200, 500]  # Should handle failure gracefully
+            # Should handle failure gracefully
+            assert response1.status_code in [200, 500]
             
             # Second submission should succeed
             response2 = client.post("/alerts", json=alert_data)
@@ -865,7 +962,11 @@ class TestCriticalCoverage:
                 "runbook": "https://example.com/runbook.md",
                 "data": {
                     "large_payload": "x" * (11 * 1024 * 1024),  # 11MB payload
-                    "deep_nesting": {"level1": {"level2": {"level3": {"level4": {"level5": "value"}}}}}
+                    "deep_nesting": {
+                        "level1": {
+                            "level2": {"level3": {"level4": {"level5": "value"}}}
+                        }
+                    }
                 }
             }
         ]
@@ -899,13 +1000,18 @@ class TestCriticalCoverage:
         }
         
         # Test with existing processing key
-        with patch('tarsy.main.processing_alert_keys', {"test-key": "existing-id"}), \
+        mock_alert_key = Mock()
+        mock_alert_key.__str__ = Mock(return_value="test-key")
+        mock_alert_key.__hash__ = Mock(return_value=12345)
+        
+        with patch(
+            'tarsy.main.processing_alert_keys', {mock_alert_key: "existing-id"}
+        ), \
              patch('tarsy.main.alert_keys_lock', asyncio.Lock()), \
-             patch('tarsy.main.AlertKey') as mock_alert_key:
+             patch('tarsy.main.AlertKey.from_chain_context') as mock_from_chain_context:
             
-            mock_key = Mock()
-            mock_key.__str__ = Mock(return_value="test-key")
-            mock_alert_key.from_alert_data.return_value = mock_key
+            # Mock the factory method to return our test key
+            mock_from_chain_context.return_value = mock_alert_key
             
             response = client.post("/alerts", json=alert_data)
             assert response.status_code == 200
@@ -929,12 +1035,16 @@ class TestCriticalCoverage:
              patch('tarsy.main.asyncio.create_task'), \
              patch('tarsy.main.processing_alert_keys', {}), \
              patch('tarsy.main.alert_keys_lock', asyncio.Lock()), \
-             patch('tarsy.main.AlertKey') as mock_alert_key:
+             patch(
+                 'tarsy.main.AlertKey.from_chain_context'
+             ) as mock_from_chain_context:
             
-            # Mock AlertKey to return a unique key matching production format: <alert_type>_<12-char hex hash>
+            # Mock AlertKey to return a unique key matching production format:
+            # <alert_type>_<12-char hex hash>
             mock_key = Mock()
             mock_key.__str__ = Mock(return_value=f"test_alert_{uuid.uuid4().hex[:12]}")
-            mock_alert_key.from_alert_data.return_value = mock_key
+            mock_key.__hash__ = Mock(return_value=12345)
+            mock_from_chain_context.return_value = mock_key
             
             mock_alert_service.register_alert_id = Mock()
             

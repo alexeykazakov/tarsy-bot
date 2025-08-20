@@ -9,11 +9,12 @@ from typing import TYPE_CHECKING
 
 from tarsy.utils.logger import get_module_logger
 from tarsy.models.unified_interactions import LLMMessage
-from .base_iteration_controller import IterationController, IterationContext
+from .base_controller import IterationController
 
 if TYPE_CHECKING:
+    from ...models.processing_context import StageContext
     from tarsy.integrations.llm.client import LLMClient
-    from tarsy.agents.prompt_builder import PromptBuilder
+    from tarsy.agents.prompts import PromptBuilder
 
 logger = get_module_logger(__name__)
 
@@ -35,24 +36,12 @@ class ReactFinalAnalysisController(IterationController):
         """Final analysis doesn't need MCP tool discovery."""
         return False
     
-    async def execute_analysis_loop(self, context: IterationContext) -> str:
-        """Execute final analysis - single LLM call, no iterations."""
-        logger.info("Starting final analysis (single LLM call, no tools)")
+    async def execute_analysis_loop(self, context: 'StageContext') -> str:
+        """Execute final analysis with StageContext."""
+        logger.info("Starting final analysis with StageContext")
         
-        # Get actual stage name from AlertProcessingData (or None for non-chain execution)
-        stage_name = getattr(context.alert_data, 'current_stage_name', None)
-        
-        # Build final analysis prompt (chain context will be handled in prompt builder)
-        prompt_context = context.agent.create_prompt_context(
-            alert_data=context.alert_data,
-            runbook_content=context.runbook_content,
-            available_tools=None,  # No tools available
-            stage_name=stage_name,
-            is_final_stage=True,
-            previous_stages=None  # Will be handled by chain context
-        )
-        
-        prompt = self.prompt_builder.build_final_analysis_prompt(prompt_context)
+        # Pass StageContext directly to prompt builder
+        prompt = self.prompt_builder.build_final_analysis_prompt(context)
         
         # Single comprehensive analysis call with simplified system message
         # No ReAct or MCP instructions needed for final analysis
@@ -72,12 +61,3 @@ class ReactFinalAnalysisController(IterationController):
         ]
         
         return await self.llm_client.generate_response(messages, context.session_id, context.agent.get_current_stage_execution_id())
-
-    def extract_final_analysis(self, analysis_result: str, context) -> str:
-        """
-        Final analysis controller already generates clean analysis - return as-is.
-        """
-        if not analysis_result:
-            return "No final analysis generated"
-        
-        return analysis_result.strip()

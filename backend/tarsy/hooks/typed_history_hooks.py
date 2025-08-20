@@ -37,10 +37,17 @@ class TypedLLMHistoryHook(BaseTypedHook[LLMInteraction]):
             interaction: Unified LLM interaction data
         """
         try:
-            # Direct unified model conversion - no more parameter extraction!
-            self.history_service.log_llm_interaction(interaction)
-            
-            logger.debug(f"Logged LLM interaction {interaction.request_id} to history")
+            ok = await asyncio.to_thread(
+                self.history_service.store_llm_interaction, interaction
+            )
+            if ok:
+                logger.debug(
+                    f"Stored LLM interaction {interaction.request_id} to history"
+                )
+            else:
+                logger.warning(
+                    f"History service returned False for LLM interaction {interaction.request_id}"
+                )
             
         except Exception as e:
             logger.error(f"Failed to log LLM interaction to history: {e}")
@@ -66,10 +73,17 @@ class TypedMCPHistoryHook(BaseTypedHook[MCPInteraction]):
             interaction: Unified MCP interaction data
         """
         try:
-            # Direct unified model conversion - no more parameter extraction!
-            self.history_service.log_mcp_interaction(interaction)
-            
-            logger.debug(f"Logged MCP interaction {interaction.request_id} to history")
+            ok = await asyncio.to_thread(
+                self.history_service.store_mcp_interaction, interaction
+            )
+            if ok:
+                logger.debug(
+                    f"Stored MCP interaction {interaction.request_id} to history"
+                )
+            else:
+                logger.warning(
+                    f"History service returned False for MCP interaction {interaction.request_id}"
+                )
             
         except Exception as e:
             logger.error(f"Failed to log MCP interaction to history: {e}")
@@ -95,10 +109,17 @@ class TypedMCPListHistoryHook(BaseTypedHook[MCPInteraction]):
             interaction: Unified MCP tool list data
         """
         try:
-            # Direct unified model conversion - no more parameter extraction!
-            self.history_service.log_mcp_interaction(interaction)
-            
-            logger.debug(f"Logged MCP tool list {interaction.request_id} to history")
+            ok = await asyncio.to_thread(
+                self.history_service.store_mcp_interaction, interaction
+            )
+            if ok:
+                logger.debug(
+                    f"Stored MCP tool list {interaction.request_id} to history"
+                )
+            else:
+                logger.warning(
+                    f"History service returned False for MCP tool list {interaction.request_id}"
+                )
             
         except Exception as e:
             logger.error(f"Failed to log MCP tool list to history: {e}")

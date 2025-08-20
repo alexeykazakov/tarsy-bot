@@ -6,15 +6,15 @@ to ensure proper request/response handling and API contract compliance.
 """
 
 from datetime import datetime, timezone
-from unittest.mock import Mock, patch, AsyncMock
+from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from tarsy.controllers.history_controller import HistoryService, router
-from tarsy.utils.timestamp import now_us
 from tarsy.services.history_service import get_history_service
+from tarsy.utils.timestamp import now_us
 
 
 class TestHistoryControllerEndpoints:
@@ -40,23 +40,19 @@ class TestHistoryControllerEndpoints:
         # Use the comprehensive factory that creates all the defaults we need
         service = MockFactory.create_mock_history_service()
         
-        # Add legacy calculate_session_summary mock for backward compatibility
-        service.calculate_session_summary.return_value = {
-            "total_interactions": 2,
-            "llm_interactions": 1,
-            "mcp_communications": 1,
-            "total_duration_ms": 2000,
-            "errors_count": 0,
-            "system_events": 0
-        }
+
         
         return service
     
     @pytest.mark.unit
     def test_get_sessions_list_success(self, app, client, mock_history_service):
         """Test successful sessions list retrieval."""
-        from tarsy.models.history_models import SessionOverview, PaginatedSessions, PaginationInfo
         from tarsy.models.constants import AlertSessionStatus
+        from tarsy.models.history_models import (
+            PaginatedSessions,
+            PaginationInfo,
+            SessionOverview,
+        )
         
         now_us_time = now_us()
         session1 = SessionOverview(
@@ -242,8 +238,8 @@ class TestHistoryControllerEndpoints:
     def test_get_sessions_list_multiple_status_historical_use_case(self, app, client, mock_history_service):
         """Test the specific use case for historical alerts (completed + failed)."""
         # Arrange
-        from tests.utils import SessionFactory
         from tarsy.models.constants import AlertSessionStatus
+        from tests.utils import SessionFactory
         
         mock_sessions = [
             SessionFactory.create_session_overview(
@@ -297,8 +293,8 @@ class TestHistoryControllerEndpoints:
     def test_get_sessions_list_multiple_status_active_use_case(self, app, client, mock_history_service):
         """Test filtering for active alerts (pending + in_progress)."""
         # Arrange
-        from tests.utils import SessionFactory
         from tarsy.models.constants import AlertSessionStatus
+        from tests.utils import SessionFactory
         
         mock_sessions = [
             SessionFactory.create_session_overview(
@@ -655,7 +651,7 @@ class TestHistoryControllerEndpoints:
     @pytest.mark.unit
     def test_get_sessions_list_service_disabled(self, app, client, mock_history_service):
         """Test sessions list when history service is disabled."""
-        mock_history_service.enabled = False
+        mock_history_service.is_enabled = False
         from tarsy.models.history_models import PaginatedSessions, PaginationInfo
         empty_paginated = PaginatedSessions(
             sessions=[],
@@ -698,8 +694,15 @@ class TestHistoryControllerEndpoints:
     def test_get_session_detail_success(self, app, client, mock_history_service):
         """Test successful session detail retrieval."""
         # Create proper DetailedSession object
-        from tarsy.models.history_models import DetailedSession, DetailedStage, LLMInteraction, MCPInteraction, LLMEventDetails, MCPEventDetails
         from tarsy.models.constants import AlertSessionStatus, StageStatus
+        from tarsy.models.history_models import (
+            DetailedSession,
+            DetailedStage,
+            LLMEventDetails,
+            LLMInteraction,
+            MCPEventDetails,
+            MCPInteraction,
+        )
         from tarsy.models.unified_interactions import LLMMessage
         
         # Create LLM interaction
@@ -766,7 +769,7 @@ class TestHistoryControllerEndpoints:
             llm_interaction_count=1,
             mcp_communication_count=1
         )
-        mock_history_service.get_session_timeline.return_value = mock_timeline
+        mock_history_service.get_session_details.return_value = mock_timeline
         
         # Mock the get_session_overview async method
         async def mock_get_session_overview_first(session_id):
@@ -793,22 +796,13 @@ class TestHistoryControllerEndpoints:
             }
         mock_history_service.get_session_overview = mock_get_session_overview_first
         
-        # Mock the new get_stage_interaction_counts method
-        mock_history_service.get_stage_interaction_counts.return_value = {
-            "exec-3": {"llm_interactions": 1, "mcp_communications": 1}
-        }
+
         
-        # Mock calculate_session_summary method (legacy)
-        mock_history_service.calculate_session_summary.return_value = {
-            "total_interactions": 2,
-            "llm_interactions": 1, 
-            "mcp_communications": 1,
-            "total_duration_ms": 2000
-        }
+
         
         # Mock get_session_summary method (async - used by the controller)
-        from tests.utils import SessionFactory
         from tarsy.models.history_models import ChainStatistics
+        from tests.utils import SessionFactory
         mock_session_stats = SessionFactory.create_session_stats(
             total_interactions=2,
             llm_interactions=1,
@@ -889,7 +883,7 @@ class TestHistoryControllerEndpoints:
     @pytest.mark.unit
     def test_get_session_detail_not_found(self, app, client, mock_history_service):
         """Test session detail for non-existent session."""
-        mock_history_service.get_session_timeline.return_value = None
+        mock_history_service.get_session_details.return_value = None
         
         # Override FastAPI dependency
         app.dependency_overrides[get_history_service] = lambda: mock_history_service
@@ -906,8 +900,8 @@ class TestHistoryControllerEndpoints:
     @pytest.mark.unit
     def test_get_session_detail_service_disabled(self, app, client, mock_history_service):
         """Test session detail when service is disabled."""
-        mock_history_service.enabled = False
-        mock_history_service.get_session_timeline.return_value = None
+        mock_history_service.is_enabled = False
+        mock_history_service.get_session_details.return_value = None
         
         # Override FastAPI dependency
         app.dependency_overrides[get_history_service] = lambda: mock_history_service
@@ -924,7 +918,7 @@ class TestHistoryControllerEndpoints:
     @pytest.mark.unit
     def test_get_session_detail_service_error(self, app, client, mock_history_service):
         """Test session detail with service error."""
-        mock_history_service.get_session_timeline.side_effect = Exception("Service error")
+        mock_history_service.get_session_details.side_effect = Exception("Service error")
         
         # Override FastAPI dependency
         app.dependency_overrides[get_history_service] = lambda: mock_history_service
@@ -940,7 +934,7 @@ class TestHistoryControllerEndpoints:
     @pytest.mark.unit
     def test_health_check_healthy_service(self, app, client, mock_history_service):
         """Test health check with healthy service."""
-        mock_history_service.enabled = True
+        mock_history_service.is_enabled = True
         mock_history_service.test_database_connection.return_value = True
         
         # Override FastAPI dependency
@@ -967,7 +961,7 @@ class TestHistoryControllerEndpoints:
     @pytest.mark.unit
     def test_health_check_disabled_service(self, app, client, mock_history_service):
         """Test health check with disabled service."""
-        mock_history_service.enabled = False
+        mock_history_service.is_enabled = False
         
         # Override FastAPI dependency
         app.dependency_overrides[get_history_service] = lambda: mock_history_service
@@ -987,7 +981,7 @@ class TestHistoryControllerEndpoints:
     @pytest.mark.unit
     def test_health_check_database_failure(self, app, client, mock_history_service):
         """Test health check with database connection failure."""
-        mock_history_service.enabled = True
+        mock_history_service.is_enabled = True
         mock_history_service.test_database_connection.return_value = False
         
         # Override FastAPI dependency
@@ -1007,7 +1001,7 @@ class TestHistoryControllerEndpoints:
     @pytest.mark.unit
     def test_health_check_exception_handling(self, app, client, mock_history_service):
         """Test health check with exception."""
-        mock_history_service.enabled = True
+        mock_history_service.is_enabled = True
         mock_history_service.test_database_connection.side_effect = Exception("Database error")
         
         # Override FastAPI dependency
@@ -1098,7 +1092,7 @@ class TestHistoryControllerValidation:
     @pytest.mark.unit
     def test_session_id_validation(self, app, client, mock_history_service):
         """Test session ID parameter validation."""
-        mock_history_service.get_session_timeline.return_value = None
+        mock_history_service.get_session_details.return_value = None
         
         # Override FastAPI dependency
         app.dependency_overrides[get_history_service] = lambda: mock_history_service
@@ -1162,7 +1156,7 @@ class TestHistoryControllerResponseFormat:
         service.enabled = True
         service.is_enabled = True
         # Will be set up with proper model below
-        service.get_session_timeline.return_value = None
+        service.get_session_details.return_value = None
         service.test_database_connection.return_value = True
         
         # Add settings mock
@@ -1171,16 +1165,6 @@ class TestHistoryControllerResponseFormat:
         mock_settings.history_enabled = True
         mock_settings.history_retention_days = 90
         service.settings = mock_settings
-        
-        # Add calculate_session_summary mock with default return value
-        service.calculate_session_summary.return_value = {
-            "total_interactions": 2,
-            "llm_interactions": 1,
-            "mcp_communications": 1,
-            "total_duration_ms": 2000,
-            "errors_count": 0,
-            "system_events": 0
-        }
         
         return service
     
@@ -1260,8 +1244,13 @@ class TestHistoryControllerResponseFormat:
         """Test that session detail response matches expected format."""
         
         # Create proper DetailedSession object
-        from tarsy.models.history_models import DetailedSession, DetailedStage, LLMInteraction, LLMEventDetails
         from tarsy.models.constants import AlertSessionStatus, StageStatus
+        from tarsy.models.history_models import (
+            DetailedSession,
+            DetailedStage,
+            LLMEventDetails,
+            LLMInteraction,
+        )
         from tarsy.models.unified_interactions import LLMMessage
         
         # Create LLM interaction
@@ -1313,7 +1302,7 @@ class TestHistoryControllerResponseFormat:
             llm_interaction_count=1,
             mcp_communication_count=0
         )
-        mock_history_service.get_session_timeline.return_value = mock_timeline
+        mock_history_service.get_session_details.return_value = mock_timeline
         
         # Mock the get_session_overview call for chain execution data
         mock_chain_data = {
@@ -1344,21 +1333,12 @@ class TestHistoryControllerResponseFormat:
             }
         mock_history_service.get_session_overview = mock_get_session_overview
         
-        # Mock the new get_stage_interaction_counts method
-        mock_history_service.get_stage_interaction_counts.return_value = {
-            "exec-1": {"llm_interactions": 1, "mcp_communications": 1}
-        }
+
         
-        # Mock calculate_session_summary method (legacy)
-        mock_history_service.calculate_session_summary.return_value = {
-            "total_interactions": 2,
-            "llm_interactions": 1, 
-            "mcp_communications": 1,
-            "total_duration_ms": 2000
-        }
+
         
         # Mock get_session_summary method (async - used by the controller)
-        from tarsy.models.history_models import SessionStats, ChainStatistics
+        from tarsy.models.history_models import ChainStatistics, SessionStats
         mock_session_stats = SessionStats(
             total_interactions=2,
             llm_interactions=1,
@@ -1790,8 +1770,8 @@ class TestDashboardEndpoints:
         session_id = "test-session-123"
         
         # Create SessionStats model using factory
-        from tests.utils import SessionFactory
         from tarsy.models.history_models import ChainStatistics
+        from tests.utils import SessionFactory
         
         session_stats = SessionFactory.create_session_stats(
             total_interactions=13,
@@ -1894,8 +1874,8 @@ class TestDashboardEndpoints:
         session_id = "minimal-session-123"
         
         # Mock service response with minimal data using factory
-        from tests.utils import SessionFactory
         from tarsy.models.history_models import ChainStatistics
+        from tests.utils import SessionFactory
         mock_summary = SessionFactory.create_session_stats(
             total_interactions=2,
             llm_interactions=1,
@@ -1944,8 +1924,8 @@ class TestDashboardEndpoints:
         session_id = "error-session-123"
         
         # Mock service response with errors using factory
-        from tests.utils import SessionFactory
         from tarsy.models.history_models import ChainStatistics
+        from tests.utils import SessionFactory
         mock_summary = SessionFactory.create_session_stats(
             total_interactions=10,
             llm_interactions=6,
@@ -1989,8 +1969,8 @@ class TestDashboardEndpoints:
         session_id = "format-test-session"
         
         # Mock service response using factory
-        from tests.utils import SessionFactory
         from tarsy.models.history_models import ChainStatistics
+        from tests.utils import SessionFactory
         mock_summary = SessionFactory.create_session_stats(
             total_interactions=5,
             llm_interactions=3,

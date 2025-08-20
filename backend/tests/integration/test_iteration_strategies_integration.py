@@ -12,10 +12,10 @@ from unittest.mock import AsyncMock, Mock, patch
 import pytest
 
 from tarsy.agents.configurable_agent import ConfigurableAgent
-from tarsy.models.constants import IterationStrategy, StageStatus
 from tarsy.agents.kubernetes_agent import KubernetesAgent
 from tarsy.config.agent_config import ConfigurationLoader
 from tarsy.models.agent_config import AgentConfigModel
+from tarsy.models.constants import IterationStrategy, StageStatus
 from tarsy.services.agent_factory import AgentFactory
 from tarsy.services.mcp_server_registry import MCPServerRegistry
 
@@ -112,30 +112,35 @@ class TestIterationStrategiesIntegration:
         assert react_agent.iteration_strategy == IterationStrategy.REACT
         assert react_stage_agent.iteration_strategy == IterationStrategy.REACT_STAGE
         
-        # Stub distinct behavior to ensure result summaries differ
-        react_agent.determine_mcp_tools = AsyncMock(return_value=[])
-        react_agent.determine_next_mcp_tools = AsyncMock(return_value={"continue": False})
-        react_agent.analyze_alert = AsyncMock(return_value="REACT analysis")
-
-        react_stage_agent.determine_mcp_tools = AsyncMock(return_value=[])
-        react_stage_agent.determine_next_mcp_tools = AsyncMock(return_value={"continue": False})
-        react_stage_agent.analyze_alert = AsyncMock(return_value="REACT_STAGE analysis")
+        # Mock iteration controller behavior to ensure result summaries differ
+        react_agent._iteration_controller.execute_analysis_loop = AsyncMock(
+            return_value="Final Answer: REACT analysis completed with systematic investigation"
+        )
+        react_stage_agent._iteration_controller.execute_analysis_loop = AsyncMock(
+            return_value="Final Answer: REACT_STAGE analysis completed with stage-specific findings"
+        )
         
         # Process alert with both strategies
-        from tarsy.models.alert_processing import AlertProcessingData
-        alert_processing_data = AlertProcessingData(
+        from tarsy.models.processing_context import ChainContext
+        chain_context_react = ChainContext(
             alert_type="kubernetes",  # sample_alert_data is dict, not Alert object
             alert_data=sample_alert_data,
+            session_id="test-session-react",
+            current_stage_name="analysis",
             runbook_content=sample_runbook
         )
         
-        react_result = await react_agent.process_alert(
-            alert_processing_data, "test-session-react"
+        chain_context_react_stage = ChainContext(
+            alert_type="kubernetes",
+            alert_data=sample_alert_data,
+            session_id="test-session-react-stage",
+            current_stage_name="analysis",
+            runbook_content=sample_runbook
         )
         
-        react_stage_result = await react_stage_agent.process_alert(
-            alert_processing_data, "test-session-react-stage"
-        )
+        react_result = await react_agent.process_alert(chain_context_react)
+        
+        react_stage_result = await react_stage_agent.process_alert(chain_context_react_stage)
         
         # Both should succeed but potentially use different processing paths
         assert react_result.status == StageStatus.COMPLETED
@@ -189,30 +194,35 @@ class TestIterationStrategiesIntegration:
         assert react_stage_agent.iteration_strategy == IterationStrategy.REACT_STAGE
         assert react_agent.iteration_strategy == IterationStrategy.REACT
         
-        # Mock processing methods with distinct outputs
-        react_stage_agent.determine_mcp_tools = AsyncMock(return_value=[])
-        react_stage_agent.determine_next_mcp_tools = AsyncMock(return_value={"continue": False})
-        react_stage_agent.analyze_alert = AsyncMock(return_value="Configurable analysis (stage)")
-
-        react_agent.determine_mcp_tools = AsyncMock(return_value=[])
-        react_agent.determine_next_mcp_tools = AsyncMock(return_value={"continue": False})
-        react_agent.analyze_alert = AsyncMock(return_value="Configurable analysis (react)")
+        # Mock iteration controller behavior with distinct outputs
+        react_stage_agent._iteration_controller.execute_analysis_loop = AsyncMock(
+            return_value="Final Answer: Configurable analysis completed using REACT_STAGE strategy with incremental findings"
+        )
+        react_agent._iteration_controller.execute_analysis_loop = AsyncMock(
+            return_value="Final Answer: Configurable analysis completed using REACT strategy with comprehensive investigation"
+        )
         
         # Process alerts
-        from tarsy.models.alert_processing import AlertProcessingData
-        alert_processing_data = AlertProcessingData(
+        from tarsy.models.processing_context import ChainContext
+        chain_context_react_stage = ChainContext(
             alert_type="kubernetes",  # sample_alert_data is dict, not Alert object
             alert_data=sample_alert_data,
+            session_id="test-config-react-stage",
+            current_stage_name="analysis",
             runbook_content=sample_runbook
         )
         
-        react_stage_result = await react_stage_agent.process_alert(
-            alert_processing_data, "test-config-react-stage"
+        chain_context_react = ChainContext(
+            alert_type="kubernetes",
+            alert_data=sample_alert_data,
+            session_id="test-config-react",
+            current_stage_name="analysis",
+            runbook_content=sample_runbook
         )
         
-        react_result = await react_agent.process_alert(
-            alert_processing_data, "test-config-react"
-        )
+        react_stage_result = await react_stage_agent.process_alert(chain_context_react_stage)
+        
+        react_result = await react_agent.process_alert(chain_context_react)
         
         # Verify results
         assert react_stage_result.status == StageStatus.COMPLETED
@@ -387,29 +397,35 @@ mcp_servers:
             # Mock processing for testing
             mock_llm_client.generate_response.return_value = "YAML config test analysis"
             
-            react_stage_agent.determine_mcp_tools = AsyncMock(return_value=[])
-            react_stage_agent.determine_next_mcp_tools = AsyncMock(return_value={"continue": False})
-            react_stage_agent.analyze_alert = AsyncMock(return_value="YAML test analysis (stage)")
-
-            react_agent.determine_mcp_tools = AsyncMock(return_value=[])
-            react_agent.determine_next_mcp_tools = AsyncMock(return_value={"continue": False})
-            react_agent.analyze_alert = AsyncMock(return_value="YAML test analysis (react)")
+            # Mock iteration controller behavior for YAML config test
+            react_stage_agent._iteration_controller.execute_analysis_loop = AsyncMock(
+                return_value="Final Answer: YAML configuration test analysis using REACT_STAGE with staged data collection"
+            )
+            react_agent._iteration_controller.execute_analysis_loop = AsyncMock(
+                return_value="Final Answer: YAML configuration test analysis using REACT with systematic reasoning"
+            )
             
             # Process alerts with both agents
-            from tarsy.models.alert_processing import AlertProcessingData
-            alert_processing_data = AlertProcessingData(
+            from tarsy.models.processing_context import ChainContext
+            chain_context_react_stage = ChainContext(
                 alert_type="kubernetes",  # sample_alert_data is dict, not Alert object
                 alert_data=sample_alert_data,
+                session_id="yaml-react-stage-test",
+                current_stage_name="analysis",
                 runbook_content=sample_runbook
             )
             
-            react_stage_result = await react_stage_agent.process_alert(
-                alert_processing_data, "yaml-react-stage-test"
+            chain_context_react = ChainContext(
+                alert_type="kubernetes",
+                alert_data=sample_alert_data,
+                session_id="yaml-react-test",
+                current_stage_name="analysis",
+                runbook_content=sample_runbook
             )
             
-            react_result = await react_agent.process_alert(
-                alert_processing_data, "yaml-react-test"
-            )
+            react_stage_result = await react_stage_agent.process_alert(chain_context_react_stage)
+            
+            react_result = await react_agent.process_alert(chain_context_react)
             
             # Verify both processed successfully
             assert react_stage_result.status == StageStatus.COMPLETED

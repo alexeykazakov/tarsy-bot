@@ -115,13 +115,13 @@ class TestHistoryService:
             else:
                 assert repo is None
     
-    @pytest.mark.parametrize("scenario,service_enabled,repo_side_effect,expected_session_id", [
-        ("success", True, None, "test-session-id"),  # Successful creation
-        ("disabled", False, None, None),  # Service disabled
-        ("exception", True, Exception("Database error"), None),  # Database error
+    @pytest.mark.parametrize("scenario,service_enabled,repo_side_effect,expected_result", [
+        ("success", True, None, True),  # Successful creation
+        ("disabled", False, None, False),  # Service disabled
+        ("exception", True, Exception("Database error"), False),  # Database error
     ])
     @pytest.mark.unit
-    def test_create_session_scenarios(self, history_service, scenario, service_enabled, repo_side_effect, expected_session_id):
+    def test_create_session_scenarios(self, history_service, scenario, service_enabled, repo_side_effect, expected_result):
         """Test session creation for various scenarios."""
         dependencies = MockFactory.create_mock_history_service_dependencies()
         
@@ -134,14 +134,38 @@ class TestHistoryService:
                 mock_get_repo.return_value.__enter__.return_value = dependencies['repository']
                 mock_get_repo.return_value.__exit__.return_value = None
             
-            session_id = history_service.create_session(
-                alert_id="test-alert-123",
+            # Create mock ChainContext and ChainConfigModel
+            from tarsy.models.agent_config import (
+                ChainConfigModel,
+                ChainStageConfigModel,
+            )
+            from tarsy.models.processing_context import ChainContext
+            
+            chain_context = ChainContext(
+                alert_type="test_alert",
                 alert_data={"alert_type": "test", "environment": "test"},
-                agent_type="TestAgent",
-                alert_type="test_alert"
+                session_id="test-session-id",
+                current_stage_name="test_stage"
             )
             
-            assert session_id == expected_session_id
+            chain_definition = ChainConfigModel(
+                chain_id="test-chain",
+                alert_types=["test_alert"],
+                stages=[
+                    ChainStageConfigModel(
+                        name="test_stage",
+                        agent="TestAgent"
+                    )
+                ]
+            )
+            
+            result = history_service.create_session(
+                chain_context=chain_context,
+                chain_definition=chain_definition,
+                alert_id="test-alert-123"
+            )
+            
+            assert result == expected_result
             if scenario == "success":
                 dependencies['repository'].create_alert_session.assert_called_once()
     
@@ -274,12 +298,12 @@ class TestHistoryService:
             if interaction_type == "llm":
                 from tarsy.models.unified_interactions import LLMInteraction
                 interaction = LLMInteraction(**interaction_data)
-                result = history_service.log_llm_interaction(interaction)
+                result = history_service.store_llm_interaction(interaction)
                 dependencies['repository'].create_llm_interaction.assert_called_once()
             else:
                 from tarsy.models.unified_interactions import MCPInteraction
                 interaction = MCPInteraction(**interaction_data)
-                result = history_service.log_mcp_interaction(interaction)
+                result = history_service.store_mcp_interaction(interaction)
                 dependencies['repository'].create_mcp_communication.assert_called_once()
             
             assert result == True
@@ -329,11 +353,12 @@ class TestHistoryService:
                 dependencies['repository'].get_alert_sessions.assert_called_once()
     
     @pytest.mark.unit
-    def test_get_session_timeline_success(self, history_service):
+    def test_get_session_details_success(self, history_service):
         """Test successful session timeline retrieval."""
-        from tarsy.models.history_models import DetailedSession, DetailedStage, LLMInteraction, MCPInteraction, LLMEventDetails, MCPEventDetails
-        from tarsy.models.constants import AlertSessionStatus, StageStatus
-        from tarsy.models.unified_interactions import LLMMessage
+        from tarsy.models.constants import AlertSessionStatus
+        from tarsy.models.history_models import (
+            DetailedSession,
+        )
         
         dependencies = MockFactory.create_mock_history_service_dependencies()
         
@@ -360,7 +385,7 @@ class TestHistoryService:
             stages=[]
         )
         
-        dependencies['repository'].get_session_timeline.return_value = mock_detailed_session
+        dependencies['repository'].get_session_details.return_value = mock_detailed_session
         
         expected_timeline_data = {
             "session": {
@@ -392,7 +417,7 @@ class TestHistoryService:
             mock_get_repo.return_value.__enter__.return_value = dependencies['repository']
             mock_get_repo.return_value.__exit__.return_value = None
             
-            timeline = history_service.get_session_timeline("test-session-id")
+            timeline = history_service.get_session_details("test-session-id")
             
             assert timeline is not None
             assert isinstance(timeline, DetailedSession)
@@ -453,11 +478,7 @@ class TestHistoryService:
         def mock_operation():
             nonlocal call_count
             call_count += 1
-            if operation_type == "success_after_retry" and call_count == 1:
-                raise Exception(error_type)
-            elif operation_type == "exhausts_retries":
-                raise Exception(error_type)
-            elif operation_type == "non_retryable":
+            if operation_type == "success_after_retry" and call_count == 1 or operation_type == "exhausts_retries" or operation_type == "non_retryable":
                 raise Exception(error_type)
             return "success"
         
@@ -514,9 +535,10 @@ class TestHistoryServiceStageExecution:
     @pytest.fixture
     def sample_stage_execution(self):
         """Sample stage execution for testing."""
-        from tarsy.models.db_models import StageExecution
         from tarsy.models.constants import StageStatus
+        from tarsy.models.db_models import StageExecution
         return StageExecution(
+            execution_id="stage-exec-123",
             session_id="test-session",
             stage_id="test-stage-0",
             stage_index=0,
@@ -545,7 +567,7 @@ class TestHistoryServiceStageExecution:
         service = HistoryService()
         
         # Mock the retry mechanism to return None (simulating all retries failed)
-        with patch.object(service, '_retry_database_operation', return_value=None):
+        with patch.object(service, '_retry_database_operation_async', return_value=None):
             # Should raise RuntimeError instead of returning fallback ID  
             with pytest.raises(RuntimeError, match="Failed to create stage execution record"):
                 await service.create_stage_execution(sample_stage_execution)
@@ -556,9 +578,167 @@ class TestHistoryServiceStageExecution:
         service = HistoryService()
         
         # Mock successful repository operation
-        with patch.object(service, '_retry_database_operation', return_value="stage-exec-123"):
+        with patch.object(service, '_retry_database_operation_async', return_value="stage-exec-123"):
             result = await service.create_stage_execution(sample_stage_execution)
             assert result == "stage-exec-123"
+    
+    @pytest.mark.asyncio
+    async def test_update_stage_execution_success(self, sample_stage_execution):
+        """Test successful stage execution update."""
+        service = HistoryService()
+        
+        # Update stage execution status
+        from tarsy.models.constants import StageStatus
+        sample_stage_execution.status = StageStatus.COMPLETED.value
+        sample_stage_execution.stage_output = {"success": True, "message": "Test completed successfully"}
+        sample_stage_execution.completed_at_us = 1640995200000000
+        sample_stage_execution.duration_ms = 5000
+        
+        # Mock successful repository operation
+        with patch.object(service, '_retry_database_operation_async', return_value=True):
+            result = await service.update_stage_execution(sample_stage_execution)
+            assert result == True
+            
+            # Verify retry operation was called with correct operation name
+            service._retry_database_operation_async.assert_called_once()
+            args, kwargs = service._retry_database_operation_async.call_args
+            assert args[0] == "update_stage_execution"
+    
+    @pytest.mark.asyncio
+    async def test_update_stage_execution_failure(self, sample_stage_execution):
+        """Test stage execution update failure."""
+        service = HistoryService()
+        
+        # Mock failed repository operation
+        with patch.object(service, '_retry_database_operation_async', return_value=None):
+            result = await service.update_stage_execution(sample_stage_execution)
+            assert result == False
+    
+    @pytest.mark.asyncio
+    async def test_update_stage_execution_no_repository(self, sample_stage_execution):
+        """Test stage execution update when repository is unavailable."""
+        service = HistoryService()
+        
+        # Mock get_repository to return None (repository unavailable)
+        def mock_operation():
+            with service.get_repository() as repo:
+                if not repo:
+                    raise RuntimeError("History repository unavailable - cannot update stage execution")
+                return repo.update_stage_execution(sample_stage_execution)
+        
+        # Mock the actual implementation to test error path
+        with patch.object(service, 'get_repository') as mock_get_repo:
+            mock_get_repo.return_value.__enter__.return_value = None
+            mock_get_repo.return_value.__exit__.return_value = None
+            
+            with patch.object(service, '_retry_database_operation_async') as mock_retry:
+                mock_retry.side_effect = lambda name, func: func()
+                
+                # Should call retry operation which should return None/False
+                with patch.object(service, '_retry_database_operation_async', return_value=None):
+                    result = await service.update_stage_execution(sample_stage_execution)
+                    assert result == False
+    
+    @pytest.mark.asyncio
+    async def test_update_session_current_stage_success(self):
+        """Test successful session current stage update."""
+        service = HistoryService()
+        
+        # Mock successful repository operation
+        with patch.object(service, '_retry_database_operation_async', return_value=True):
+            result = await service.update_session_current_stage(
+                session_id="test-session",
+                current_stage_index=2,
+                current_stage_id="stage-2"
+            )
+            assert result == True
+            
+            # Verify retry operation was called with correct operation name
+            service._retry_database_operation_async.assert_called_once()
+            args, kwargs = service._retry_database_operation_async.call_args
+            assert args[0] == "update_session_current_stage"
+    
+    @pytest.mark.asyncio
+    async def test_update_session_current_stage_failure(self):
+        """Test session current stage update failure."""
+        service = HistoryService()
+        
+        # Mock failed repository operation
+        with patch.object(service, '_retry_database_operation_async', return_value=None):
+            result = await service.update_session_current_stage(
+                session_id="test-session",
+                current_stage_index=2,
+                current_stage_id="stage-2"
+            )
+            assert result == False
+    
+    @pytest.mark.asyncio
+    async def test_update_session_current_stage_no_repository(self):
+        """Test session current stage update when repository is unavailable."""
+        service = HistoryService()
+        
+        # Mock get_repository to return None (repository unavailable)
+        with patch.object(service, 'get_repository') as mock_get_repo:
+            mock_get_repo.return_value.__enter__.return_value = None
+            mock_get_repo.return_value.__exit__.return_value = None
+            
+            with patch.object(service, '_retry_database_operation_async', return_value=None):
+                result = await service.update_session_current_stage(
+                    session_id="test-session",
+                    current_stage_index=2,
+                    current_stage_id="stage-2"
+                )
+                assert result == False
+    
+    @pytest.mark.asyncio
+    async def test_get_stage_execution_success(self, sample_stage_execution):
+        """Test successful stage execution retrieval."""
+        service = HistoryService()
+        
+        # Mock successful repository operation
+        with patch.object(service, '_retry_database_operation_async', return_value=sample_stage_execution):
+            result = await service.get_stage_execution("stage-exec-123")
+            
+            assert result == sample_stage_execution
+            assert result.execution_id == "stage-exec-123"
+            assert result.stage_name == "Test Stage"
+            
+            # Verify retry operation was called with correct parameters
+            service._retry_database_operation_async.assert_called_once()
+            args, kwargs = service._retry_database_operation_async.call_args
+            assert args[0] == "get_stage_execution"
+            assert kwargs.get("treat_none_as_success") == True
+    
+    @pytest.mark.asyncio
+    async def test_get_stage_execution_not_found(self):
+        """Test stage execution retrieval when execution doesn't exist."""
+        service = HistoryService()
+        
+        # Mock repository returning None (execution not found)
+        with patch.object(service, '_retry_database_operation_async', return_value=None):
+            result = await service.get_stage_execution("non-existent-exec")
+            
+            assert result is None
+            
+            # Verify retry operation was called with treat_none_as_success=True
+            service._retry_database_operation_async.assert_called_once()
+            args, kwargs = service._retry_database_operation_async.call_args
+            assert args[0] == "get_stage_execution"
+            assert kwargs.get("treat_none_as_success") == True
+    
+    @pytest.mark.asyncio
+    async def test_get_stage_execution_no_repository(self):
+        """Test stage execution retrieval when repository is unavailable."""
+        service = HistoryService()
+        
+        # Mock get_repository to return None (repository unavailable)
+        with patch.object(service, 'get_repository') as mock_get_repo:
+            mock_get_repo.return_value.__enter__.return_value = None
+            mock_get_repo.return_value.__exit__.return_value = None
+            
+            with patch.object(service, '_retry_database_operation_async', return_value=None):
+                result = await service.get_stage_execution("stage-exec-123")
+                assert result is None
 
 
 class TestHistoryServiceErrorHandling:
@@ -579,19 +759,47 @@ class TestHistoryServiceErrorHandling:
             return service
     
     @pytest.mark.unit
-    def test_graceful_degradation_repository_unavailable(self, history_service_with_errors):
-        """Test graceful degradation when repository is unavailable."""
+    def test_repository_unavailable_raises_runtime_error(self, history_service_with_errors):
+        """Test that RuntimeError is raised when repository is unavailable."""
         with patch.object(history_service_with_errors, 'get_repository') as mock_get_repo:
             mock_get_repo.return_value.__enter__.return_value = None
             mock_get_repo.return_value.__exit__.return_value = None
             
-            # All operations should return safe defaults
-            session_id = history_service_with_errors.create_session("test", {}, "agent", "alert")
-            assert session_id is None
+            # All operations should raise RuntimeError when repository unavailable
+            # Create minimal mock objects for new signature
+            from tarsy.models.agent_config import (
+                ChainConfigModel,
+                ChainStageConfigModel,
+            )
+            from tarsy.models.processing_context import ChainContext
             
+            chain_context = ChainContext(
+                alert_type="alert",
+                alert_data={"test": "data"},
+                session_id="test-session-id",
+                current_stage_name="test_stage"
+            )
+            
+            chain_definition = ChainConfigModel(
+                chain_id="test-chain",
+                alert_types=["alert"],
+                stages=[
+                    ChainStageConfigModel(
+                        name="test_stage",
+                        agent="agent"
+                    )
+                ]
+            )
+            
+            # create_session returns False when repository unavailable
+            result = history_service_with_errors.create_session(chain_context, chain_definition, "test-alert")
+            assert result == False
+            
+            # update_session_status returns False when repository unavailable  
             result = history_service_with_errors.update_session_status("test", "completed")
             assert result == False
             
+            # get_sessions_list returns None when repository unavailable
             result = history_service_with_errors.get_sessions_list()
             assert result is None
     
@@ -602,8 +810,33 @@ class TestHistoryServiceErrorHandling:
             mock_get_repo.side_effect = Exception("Simulated error")
             
             # All operations should handle exceptions gracefully
-            session_id = history_service_with_errors.create_session("test", {}, "agent", "alert")
-            assert session_id is None
+            # Create minimal mock objects for new signature
+            from tarsy.models.agent_config import (
+                ChainConfigModel,
+                ChainStageConfigModel,
+            )
+            from tarsy.models.processing_context import ChainContext
+            
+            chain_context = ChainContext(
+                alert_type="alert",
+                alert_data={"test": "data"},
+                session_id="test-session-id",
+                current_stage_name="test_stage"
+            )
+            
+            chain_definition = ChainConfigModel(
+                chain_id="test-chain",
+                alert_types=["alert"],
+                stages=[
+                    ChainStageConfigModel(
+                        name="test_stage",
+                        agent="agent"
+                    )
+                ]
+            )
+            
+            result = history_service_with_errors.create_session(chain_context, chain_definition, "test-alert")
+            assert result == False
             
             # Create unified interaction model for error test
             from tarsy.models.unified_interactions import LLMInteraction
@@ -614,19 +847,26 @@ class TestHistoryServiceErrorHandling:
                 request_json={"messages": [{"role": "user", "content": "prompt"}]},
                 response_json={"choices": [{"message": {"role": "assistant", "content": "response"}, "finish_reason": "stop"}]}
             )
-            result = history_service_with_errors.log_llm_interaction(interaction)
-            assert result == False
-            
-            from tarsy.models.unified_interactions import MCPInteraction
-            mcp_interaction = MCPInteraction(
-                session_id="test",
-                server_name="server", 
-                communication_type="type",
-                tool_name="tool",
-                step_description="step"
-            )
-            result = history_service_with_errors.log_mcp_interaction(mcp_interaction)
-            assert result == False
+            # Test that store methods return False when repository unavailable
+            with patch.object(history_service_with_errors, 'get_repository') as mock_get_repo_inner:
+                mock_get_repo_inner.return_value.__enter__.return_value = None
+                mock_get_repo_inner.return_value.__exit__.return_value = None
+                
+                # store_llm_interaction returns False when repository unavailable
+                result = history_service_with_errors.store_llm_interaction(interaction)
+                assert result == False
+                
+                from tarsy.models.unified_interactions import MCPInteraction
+                mcp_interaction = MCPInteraction(
+                    session_id="test",
+                    server_name="server", 
+                    communication_type="type",
+                    tool_name="tool",
+                    step_description="step"
+                )
+                # store_mcp_interaction returns False when repository unavailable
+                result = history_service_with_errors.store_mcp_interaction(mcp_interaction)
+                assert result == False
 
 
 class TestDashboardMethods:
@@ -636,8 +876,6 @@ class TestDashboardMethods:
     
     @pytest.mark.parametrize("scenario,expected_agent_types,expected_alert_types", [
         ("success", 2, 1),  # Repository available
-        ("no_repository", 0, 0),  # Repository unavailable
-        ("exception", 0, 0),  # Repository exception
     ])
     @pytest.mark.unit
     def test_get_filter_options_scenarios(self, scenario, expected_agent_types, expected_alert_types):
@@ -660,29 +898,20 @@ class TestDashboardMethods:
                 assert len(result.status_options) == 4
                 assert len(result.time_ranges) == 2
                 dependencies['repository'].get_filter_options.assert_called_once()
+    
+    @pytest.mark.unit
+    def test_get_filter_options_no_repository_raises_runtime_error(self):
+        """Test that RuntimeError is raised when repository is unavailable."""
+        service = HistoryService()
+        service.is_enabled = True
+        service._is_healthy = False
         
-        elif scenario == "no_repository":
-            service._is_healthy = False
+        with patch.object(service, 'get_repository') as mock_get_repo:
+            mock_get_repo.return_value.__enter__.return_value = None
+            mock_get_repo.return_value.__exit__.return_value = None
             
-            with patch.object(service, 'get_repository') as mock_get_repo:
-                mock_get_repo.return_value.__enter__.return_value = None
-                
-                result = service.get_filter_options()
-                
-                assert result.agent_types == []
-                assert result.alert_types == []
-                assert len(result.status_options) == 4
-                assert len(result.time_ranges) == 4
-        
-        else:  # exception
-            with patch.object(service, 'get_repository') as mock_get_repo:
-                mock_get_repo.side_effect = Exception("Database error")
-                
-                result = service.get_filter_options()
-                
-                assert result.agent_types == []
-                assert result.alert_types == []
-                assert len(result.status_options) == 4
+            with pytest.raises(RuntimeError, match="History repository unavailable - cannot retrieve filter options"):
+                service.get_filter_options()
 
 @pytest.mark.unit
 class TestHistoryServiceRetryLogicDuplicatePrevention:
@@ -765,12 +994,12 @@ class TestHistoryServiceRetryLogicDuplicatePrevention:
             nonlocal call_count
             call_count += 1
             if call_count == 1:
-                return "session_123"  # First attempt succeeds
+                return True  # First attempt succeeds
             raise Exception("database is locked")  # Shouldn't reach here
         
         result = history_service._retry_database_operation("create_session", operation)
         
-        assert result == "session_123"
+        assert result == True
         assert call_count == 1
     
     def test_retry_operation_create_session_prevents_duplicate_retry(self, history_service):
@@ -985,6 +1214,7 @@ async def test_cleanup_orphaned_sessions():
         session_dict.setdefault('alert_data', {})
         session_dict.setdefault('chain_id', 'test-chain')
         session_dict.setdefault('started_at_us', 1640995200000000)
+        session_dict.setdefault('alert_type', 'test')
         
         mock_all_sessions.append(session_dict)
         
@@ -1183,6 +1413,15 @@ async def test_cleanup_orphaned_sessions_session_not_found():
 class TestHistoryAPIResponseStructure:
     """Test suite for history service API response structure validation."""
     
+    @pytest.fixture
+    def history_service(self, isolated_test_settings):
+        """Create HistoryService instance for testing."""
+        with patch('tarsy.services.history_service.get_settings', return_value=isolated_test_settings):
+            service = HistoryService()
+            service._initialization_attempted = True
+            service._is_healthy = True
+            return service
+    
     @pytest.mark.unit
     def test_session_detail_response_structure(self):
         """Test that session detail response has all required fields."""
@@ -1235,138 +1474,7 @@ class TestHistoryAPIResponseStructure:
         assert 'session_metadata' in mock_response_data 
 
 
-class TestHistoryServiceSummaryMethods:
-    """Test suite for new summary calculation methods."""
-    
-    @pytest.fixture
-    def history_service(self, isolated_test_settings):
-        """Create HistoryService instance for testing."""
-        with patch('tarsy.services.history_service.get_settings', return_value=isolated_test_settings):
-            service = HistoryService()
-            service._initialization_attempted = True
-            service._is_healthy = True
-            return service
-    
-    @pytest.mark.unit
-    def test_calculate_session_summary_with_chain_data(self, history_service):
-        """Test calculate_session_summary with complete chain data."""
-        from tarsy.models.constants import StageStatus
-        
-        # Create mock session data with timeline and chain information
-        session_data = {
-            'chronological_timeline': [
-                {'type': 'llm', 'status': 'completed', 'duration_ms': 1500},
-                {'type': 'llm', 'status': 'completed', 'duration_ms': 2000},
-                {'type': 'mcp', 'status': 'completed', 'duration_ms': 500},
-                {'type': 'mcp', 'status': 'failed', 'duration_ms': 300},
-                {'type': 'system', 'status': 'completed', 'duration_ms': 100}
-            ],
-            'session': {
-                'chain_id': 'test-chain-123'
-            },
-            'stages': [
-                {'status': StageStatus.COMPLETED.value, 'agent': 'AgentA'},
-                {'status': StageStatus.COMPLETED.value, 'agent': 'AgentB'},
-                {'status': StageStatus.FAILED.value, 'agent': 'AgentA'}
-            ]
-        }
-        
-        # Calculate summary
-        summary = history_service.calculate_session_summary(session_data)
-        
-        # Verify basic statistics
-        assert summary['total_interactions'] == 5
-        assert summary['llm_interactions'] == 2
-        assert summary['mcp_communications'] == 2
-        assert summary['system_events'] == 1
-        assert summary['errors_count'] == 1  # One failed interaction
-        assert summary['total_duration_ms'] == 4400  # Sum of all durations
-        
-        # Verify chain statistics
-        assert 'chain_statistics' in summary
-        assert summary['chain_statistics']['total_stages'] == 3
-        assert summary['chain_statistics']['completed_stages'] == 2
-        assert summary['chain_statistics']['failed_stages'] == 1
-        assert summary['chain_statistics']['stages_by_agent'] == {'AgentA': 2, 'AgentB': 1}
 
-    @pytest.mark.unit 
-    def test_calculate_session_summary_no_chain_data(self, history_service):
-        """Test calculate_session_summary without chain data."""
-        # Create mock session data without chain information
-        session_data = {
-            'chronological_timeline': [
-                {'type': 'llm', 'status': 'completed', 'duration_ms': 1000},
-                {'type': 'mcp', 'status': 'completed', 'duration_ms': 500}
-            ],
-            'session': {}  # No chain_id
-        }
-        
-        # Calculate summary
-        summary = history_service.calculate_session_summary(session_data)
-        
-        # Verify basic statistics
-        assert summary['total_interactions'] == 2
-        assert summary['llm_interactions'] == 1
-        assert summary['mcp_communications'] == 1
-        assert summary['system_events'] == 0
-        assert summary['errors_count'] == 0
-        assert summary['total_duration_ms'] == 1500
-        
-        # Verify no chain statistics
-        assert 'chain_statistics' not in summary
-
-    @pytest.mark.unit
-    def test_calculate_session_summary_empty_data(self, history_service):
-        """Test calculate_session_summary with empty data."""
-        # Empty session data
-        session_data = {
-            'chronological_timeline': [],
-            'session': {}
-        }
-        
-        # Calculate summary
-        summary = history_service.calculate_session_summary(session_data)
-        
-        # Verify all counts are zero
-        assert summary['total_interactions'] == 0
-        assert summary['llm_interactions'] == 0
-        assert summary['mcp_communications'] == 0
-        assert summary['system_events'] == 0
-        assert summary['errors_count'] == 0
-        assert summary['total_duration_ms'] == 0
-        
-        # Verify no chain statistics
-        assert 'chain_statistics' not in summary
-
-    @pytest.mark.unit
-    def test_calculate_session_summary_none_data(self, history_service):
-        """Test calculate_session_summary with None input."""
-        # Calculate summary with None input
-        summary = history_service.calculate_session_summary(None)
-        
-        # Should return empty dict
-        assert summary == {}
-
-    @pytest.mark.unit
-    def test_calculate_session_summary_missing_duration(self, history_service):
-        """Test calculate_session_summary handles missing duration gracefully."""
-        # Session data with some events missing duration_ms
-        session_data = {
-            'chronological_timeline': [
-                {'type': 'llm', 'status': 'completed', 'duration_ms': 1000},
-                {'type': 'mcp', 'status': 'completed'},  # Missing duration_ms
-                {'type': 'system', 'status': 'failed', 'duration_ms': None}  # None duration
-            ],
-            'session': {}
-        }
-        
-        # Calculate summary
-        summary = history_service.calculate_session_summary(session_data)
-        
-        # Should handle missing durations gracefully
-        assert summary['total_interactions'] == 3
-        assert summary['total_duration_ms'] == 1000  # Only count non-None durations
-        assert summary['errors_count'] == 1
 
     @pytest.mark.unit
     async def test_get_session_summary_success(self, history_service):

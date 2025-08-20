@@ -14,19 +14,18 @@ from tarsy.agents.kubernetes_agent import KubernetesAgent
 from tarsy.config.settings import Settings
 from tarsy.integrations.llm.client import LLMClient, LLMManager
 from tarsy.integrations.mcp.client import MCPClient
+from tarsy.models.agent_config import MCPServerConfigModel as MCPServerConfig
 from tarsy.models.agent_execution_result import AgentExecutionResult
 from tarsy.models.alert import Alert
 from tarsy.models.constants import StageStatus
 from tarsy.models.db_models import AlertSession
 from tarsy.models.unified_interactions import LLMInteraction, MCPInteraction
-from tarsy.models.agent_config import MCPServerConfigModel as MCPServerConfig
-from tarsy.utils.timestamp import now_us
 from tarsy.services.agent_factory import AgentFactory
-from tarsy.services.agent_registry import AgentRegistry
 from tarsy.services.alert_service import AlertService
 from tarsy.services.history_service import HistoryService
 from tarsy.services.mcp_server_registry import MCPServerRegistry
 from tarsy.services.runbook_service import RunbookService
+from tarsy.utils.timestamp import now_us
 
 
 @pytest.fixture(scope="session")
@@ -320,7 +319,7 @@ def mock_mcp_client():
     client.close = AsyncMock()
     
     # Mock tool listing - use simpler return structure
-    def mock_list_tools_sync(server_name=None):
+    def mock_list_tools_sync(session_id, server_name=None, stage_execution_id=None):
         """Mock tool listing response - synchronous version."""
         if server_name == "kubernetes-server":
             return {
@@ -389,8 +388,8 @@ def mock_runbook_service(sample_runbook_content):
 @pytest.fixture
 def mock_agent_registry():
     """Mock chain registry (adapted from agent registry)."""
-    from tarsy.services.chain_registry import ChainRegistry
     from tarsy.models.agent_config import ChainConfigModel, ChainStageConfigModel
+    from tarsy.services.chain_registry import ChainRegistry
     registry = Mock(spec=ChainRegistry)
     
     # Dynamic chain routing based on alert type
@@ -420,8 +419,8 @@ def mock_agent_factory(mock_llm_manager, mock_mcp_client):
             mock_agent.set_current_stage_execution_id = Mock()
             
             # Mock the process_alert method with NEW signature to match BaseAgent
-            async def mock_kubernetes_process_alert(alert_processing_data, session_id):
-                if not session_id:
+            async def mock_kubernetes_process_alert(chain_context):
+                if not chain_context.session_id:
                     raise ValueError("session_id is required for alert processing")
                 
                 # Simulate calling LLM client multiple times as a real agent would
@@ -431,29 +430,29 @@ def mock_agent_factory(mock_llm_manager, mock_mcp_client):
                 await llm_client.generate_response([
                     Mock(role="system", content="You are an expert SRE analyzing Kubernetes namespace issues. Use available MCP tools to diagnose problems."),
                     Mock(role="user", content="select tools for Kubernetes namespace analysis")
-                ], session_id=session_id)
+                ], session_id=chain_context.session_id)
                 
                 # Call for iterative decision
                 await llm_client.generate_response([
                     Mock(role="system", content="You are an expert SRE with Kubernetes expertise. Determine if more analysis is needed."), 
                     Mock(role="user", content="iterative analysis - should we continue?")
-                ], session_id=session_id)
+                ], session_id=chain_context.session_id)
                 
                 # Call for final analysis
                 analysis_result = await llm_client.generate_response([
                     Mock(role="system", content="You are an expert SRE specializing in Kubernetes troubleshooting. Provide actionable analysis."),
                     Mock(role="user", content="final analysis of namespace issue")
-                ], session_id=session_id)
+                ], session_id=chain_context.session_id)
                 
                 # Extract namespace from alert data for tool calls
-                namespace = alert_processing_data.alert_data.get('namespace', 'default')
+                namespace = chain_context.alert_data.get('namespace', 'default')
                 
                 # Simulate calling MCP client for tool listing and execution (iterative analysis)
-                await mock_mcp_client.list_tools(server_name="kubernetes-server")
+                await mock_mcp_client.list_tools(session_id=chain_context.session_id, server_name="kubernetes-server")
                 await mock_mcp_client.call_tool("kubernetes-server", "kubectl_get_namespace", {"namespace": namespace})
                 
                 # Create comprehensive analysis including all relevant data from the alert
-                alert_data = alert_processing_data.alert_data
+                alert_data = chain_context.alert_data
                 analysis_parts = [f"Namespace '{namespace}' analyzed."]
                 
                 # Include service-specific information
@@ -508,7 +507,7 @@ def mock_agent_factory(mock_llm_manager, mock_mcp_client):
                                         analysis_parts.append(f"{subkey}: {subvalue}")
                 
                 # Infer context from runbook URL or content
-                runbook_content = alert_processing_data.runbook_content or ""
+                runbook_content = chain_context.runbook_content or ""
                 # Also check if there's a runbook field in the alert data
                 if 'runbook' in alert_data:
                     runbook_content += " " + str(alert_data['runbook'])
@@ -539,8 +538,8 @@ def mock_agent_factory(mock_llm_manager, mock_mcp_client):
             mock_agent.set_current_stage_execution_id = Mock()
             
             # Mock the process_alert method for flexible alerts with NEW signature
-            async def mock_base_process_alert(alert_processing_data, session_id):
-                if not session_id:
+            async def mock_base_process_alert(chain_context):
+                if not chain_context.session_id:
                     raise ValueError("session_id is required for alert processing")
                 
                 # Simulate calling LLM client for flexible alert analysis
@@ -548,7 +547,7 @@ def mock_agent_factory(mock_llm_manager, mock_mcp_client):
                 
                 # Generate analysis that includes comprehensive alert data content
                 # Determine service/entity name from different alert types
-                alert_data = alert_processing_data.alert_data
+                alert_data = chain_context.alert_data
                 service_name = "unknown service"
                 if 'service' in alert_data:
                     service_name = alert_data['service']
@@ -737,7 +736,7 @@ def mock_agent_factory(mock_llm_manager, mock_mcp_client):
                 await llm_client.generate_response([
                     Mock(role="system", content="You are an expert SRE analyzing monitoring alerts."),
                     Mock(role="user", content=f"analyze alert data: {alert_data}")
-                ], session_id=session_id)
+                ], session_id=chain_context.session_id)
                 
                 return AgentExecutionResult(
                     status=StageStatus.COMPLETED,
@@ -826,7 +825,7 @@ def alert_service_with_mocks(
     service.agent_factory = mock_agent_factory
     # Create mock history service for proper testing
     mock_history_service = Mock(spec=HistoryService)
-    mock_history_service.enabled = True
+    mock_history_service.is_enabled = True
     mock_history_service.create_session.return_value = "test-session-id"
     mock_history_service.update_session_status = Mock()
     mock_history_service.complete_session = Mock()
@@ -865,10 +864,10 @@ def mock_history_service():
     service.is_enabled = True
     service.create_session.return_value = "mock-session-123"
     service.update_session_status.return_value = True
-    service.log_llm_interaction.return_value = True
-    service.log_mcp_communication.return_value = True
+    service.store_llm_interaction.return_value = True
+    service.store_mcp_interaction.return_value = True
     service.get_sessions_list.return_value = ([], 0)
-    service.get_session_timeline.return_value = None
+    service.get_session_details.return_value = None
     service.test_database_connection.return_value = True
     service.health_check.return_value = {
         "enabled": True,
@@ -952,8 +951,10 @@ def datetime_now_utc():
 def history_service_with_test_db(history_test_database_engine):
     """Create HistoryService with test database engine."""
     from unittest.mock import patch
+    from sqlalchemy.orm import sessionmaker
 
     from tarsy.services.history_service import HistoryService
+    from tarsy.repositories.base_repository import DatabaseManager
     
     # Mock settings for history service
     mock_settings = Mock()
@@ -964,13 +965,17 @@ def history_service_with_test_db(history_test_database_engine):
     with patch('tarsy.services.history_service.get_settings', return_value=mock_settings):
         service = HistoryService()
         
-        # Initialize the service properly
-        service.initialize()
+        # CRITICAL: Replace the DatabaseManager's engine with our test engine
+        # that already has the tables created, to avoid separate in-memory databases
+        service.db_manager = DatabaseManager("sqlite:///:memory:")
+        service.db_manager.engine = history_test_database_engine  # Use the same engine with tables
         
-        # Override database engine for testing if db_manager exists
-        if service.db_manager:
-            service.db_manager.engine = history_test_database_engine
-            service.db_manager.SessionLocal = lambda: Session(history_test_database_engine)
+        # Create session factory using the existing engine
+        service.db_manager.session_factory = sessionmaker(
+            bind=history_test_database_engine,
+            class_=Session,
+            expire_on_commit=False
+        )
         
         service._is_healthy = True
         service._initialization_attempted = True

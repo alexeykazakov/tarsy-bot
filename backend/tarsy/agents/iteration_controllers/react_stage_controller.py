@@ -9,11 +9,12 @@ from typing import TYPE_CHECKING
 
 from tarsy.utils.logger import get_module_logger
 from tarsy.models.unified_interactions import LLMMessage
-from .base_iteration_controller import IterationController, IterationContext
+from .base_controller import IterationController
 
 if TYPE_CHECKING:
+    from ...models.processing_context import StageContext
     from tarsy.integrations.llm.client import LLMClient
-    from tarsy.agents.prompt_builder import PromptBuilder
+    from tarsy.agents.prompts import PromptBuilder
 
 logger = get_module_logger(__name__)
 
@@ -35,36 +36,25 @@ class ReactStageController(IterationController):
         """ReAct tools partial controller requires MCP tool discovery."""
         return True
     
-    async def execute_analysis_loop(self, context: IterationContext) -> str:
-        """Execute ReAct loop with data collection AND partial analysis using existing ReAct format."""
-        logger.info("Starting ReAct Tools + Partial Analysis loop")
+    async def execute_analysis_loop(self, context: 'StageContext') -> str:
+        """Execute ReAct Stage loop."""
+        logger.info("Starting ReAct Stage loop")
         
         agent = context.agent
-        if not agent:
+        if agent is None:
             raise ValueError("Agent reference is required in context")
         
         max_iterations = agent.max_iterations
         react_history = []
+        session_id = context.session_id
         
-        # Get actual stage name from AlertProcessingData (or None for non-chain execution)
-        stage_name = getattr(context.alert_data, 'current_stage_name', None)
-        
-        # Create prompt context with chain-specific data
-        prompt_context = agent.create_prompt_context(
-            alert_data=context.alert_data,
-            runbook_content=context.runbook_content,
-            available_tools={"tools": context.available_tools},
-            stage_name=stage_name,
-            previous_stages=None  # Handled by chain context
-        )
-        
-        # Execute ReAct loop using EXISTING ReAct format and parsing (same as SimpleReActController)
+        # Execute ReAct loop using DIRECT StageContext (no PromptContext conversion)
         for iteration in range(max_iterations):
             logger.info(f"Partial analysis iteration {iteration + 1}/{max_iterations}")
             
             try:
-                # Use stage analysis prompt but SAME ReAct format
-                prompt = self.prompt_builder.build_stage_analysis_react_prompt(prompt_context, react_history)
+                # Pass StageContext directly to prompt builder
+                prompt = self.prompt_builder.build_stage_analysis_react_prompt(context, react_history)
                 
                 # Use enhanced ReAct system message with MCP server instructions
                 composed_instructions = agent._compose_instructions()
@@ -76,7 +66,7 @@ class ReactStageController(IterationController):
                     LLMMessage(role="user", content=prompt)
                 ]
                 
-                response = await self.llm_client.generate_response(messages, context.session_id, agent.get_current_stage_execution_id())
+                response = await self.llm_client.generate_response(messages, session_id, agent.get_current_stage_execution_id())
                 logger.info(f"LLM Response (first 500 chars): {response[:500]}")
                 
                 # REUSE EXISTING ReAct parsing - same parsing logic as SimpleReActController
@@ -105,7 +95,7 @@ class ReactStageController(IterationController):
                         )
                         
                         # Execute tool using agent's existing method  
-                        mcp_data = await agent.execute_mcp_tools([tool_call], context.session_id)
+                        mcp_data = await agent.execute_mcp_tools([tool_call], session_id)
                         
                         # REUSE existing observation formatting
                         observation = self.prompt_builder.format_observation(mcp_data)
@@ -160,7 +150,7 @@ Please provide a final analysis based on what you've discovered, even if the inv
                 LLMMessage(role="user", content=final_prompt)
             ]
             
-            fallback_response = await self.llm_client.generate_response(messages, context.session_id, agent.get_current_stage_execution_id())
+            fallback_response = await self.llm_client.generate_response(messages, session_id, agent.get_current_stage_execution_id())
             # Include history plus fallback partial analysis
             react_history.append(f"Partial analysis completed (reached max iterations):\n{fallback_response}")
             return "\n".join(react_history)
@@ -203,5 +193,6 @@ Please provide a final analysis based on what you've discovered, even if the inv
             completion_patterns=["Partial analysis completed"],
             incomplete_patterns=["Partial analysis incomplete:"],
             fallback_extractor=extract_thoughts_and_observations,
-            fallback_message="Partial analysis stage completed with limited findings"
+            fallback_message="Partial analysis stage completed with limited findings",
+            context=context
         )

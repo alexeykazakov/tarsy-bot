@@ -8,7 +8,7 @@ import json
 import uuid
 from contextlib import asynccontextmanager
 from datetime import datetime
-from typing import Dict, List
+from typing import Dict, List, Optional
 import re
 
 from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect, Request
@@ -19,7 +19,8 @@ from tarsy.config.settings import get_settings
 from tarsy.controllers.history_controller import router as history_router
 from tarsy.database.init_db import get_database_info, initialize_database
 from tarsy.models.alert import Alert, AlertResponse
-from tarsy.models.alert_processing import AlertProcessingData, AlertKey
+from tarsy.models.alert_processing import AlertKey
+from tarsy.models.processing_context import ChainContext
 from tarsy.services.alert_service import AlertService
 from tarsy.services.dashboard_connection_manager import DashboardConnectionManager
 from tarsy.utils.logger import get_module_logger, setup_logging
@@ -29,12 +30,12 @@ from tarsy.utils.timestamp import now_us
 logger = get_module_logger(__name__)
 
 # Track currently processing alert keys to prevent duplicates
-processing_alert_keys: Dict[str, str] = {}  # alert_key -> alert_id mapping
+processing_alert_keys: Dict[AlertKey, str] = {}  # alert_key -> alert_id mapping
 alert_keys_lock = asyncio.Lock()  # Protect the processing_alert_keys dict
 
-alert_service: AlertService = None
-dashboard_manager: DashboardConnectionManager = None
-alert_processing_semaphore: asyncio.Semaphore = None
+alert_service: Optional[AlertService] = None
+dashboard_manager: Optional[DashboardConnectionManager] = None
+alert_processing_semaphore: Optional[asyncio.Semaphore] = None
 
 
 @asynccontextmanager
@@ -107,9 +108,11 @@ async def lifespan(app: FastAPI):
     logger.info("Tarsy shutting down...")
     
     # Shutdown dashboard broadcaster
-    await dashboard_manager.shutdown_broadcaster()
+    if dashboard_manager is not None:
+        await dashboard_manager.shutdown_broadcaster()
     
-    await alert_service.close()
+    if alert_service is not None:
+        await alert_service.close()
     logger.info("Tarsy shutdown complete")
 
 
@@ -182,7 +185,6 @@ async def health_check():
             "error": str(e)
         }
 
-
 @app.get("/alert-types", response_model=List[str])
 async def get_alert_types():
     """Get supported alert types for the development/testing web interface.
@@ -192,8 +194,9 @@ async def get_alert_types():
     (like Alert Manager) can submit any alert type. The system analyzes all
     alert types using the provided runbook and available agent-specific MCP tools.
     """
+    if alert_service is None:
+        raise HTTPException(status_code=503, detail="Service not initialized")
     return alert_service.chain_registry.list_available_alert_types()
-
 
 @app.post("/alerts", response_model=AlertResponse)
 async def submit_alert(request: Request):
@@ -353,21 +356,26 @@ async def submit_alert(request: Request):
         normalized_data["alert_type"] = alert_data.alert_type
         normalized_data["runbook"] = alert_data.runbook
         
-        # Create alert structure for processing using Pydantic model
-        alert = AlertProcessingData(
+        # Create alert structure for processing using ChainContext
+        # Generate unique session ID
+        session_id = str(uuid.uuid4())
+        
+        # Create ChainContext for processing  
+        alert_context = ChainContext(
             alert_type=alert_data.alert_type,
-            alert_data=normalized_data
+            alert_data=normalized_data,
+            session_id=session_id,
+            current_stage_name="initializing"  # Will be updated to actual stage names from config during execution
         )
         
-        # Generate alert key for duplicate detection
-        alert_key = AlertKey.from_alert_data(alert)
-        alert_key_str = str(alert_key)
+        # Generate alert key for duplicate detection using normalized data
+        alert_key = AlertKey.from_chain_context(alert_context)
         
         # Check for duplicate alerts already in progress
         async with alert_keys_lock:
-            if alert_key_str in processing_alert_keys:
-                existing_alert_id = processing_alert_keys[alert_key_str]
-                logger.info(f"Duplicate alert detected - same as {existing_alert_id} (key: {alert_key_str})")
+            if alert_key in processing_alert_keys:
+                existing_alert_id = processing_alert_keys[alert_key]
+                logger.info(f"Duplicate alert detected - same as {existing_alert_id} (key: {alert_key})")
                 
                 return AlertResponse(
                     alert_id=existing_alert_id,  # Return the existing alert ID
@@ -379,13 +387,15 @@ async def submit_alert(request: Request):
             alert_id = str(uuid.uuid4())
             
             # Register the alert ID as valid
+            if alert_service is None:
+                raise HTTPException(status_code=503, detail="Service not initialized")
             alert_service.register_alert_id(alert_id)
             
             # Register this alert key as being processed
-            processing_alert_keys[alert_key_str] = alert_id
+            processing_alert_keys[alert_key] = alert_id
         
         # Start background processing with normalized data
-        asyncio.create_task(process_alert_background(alert_id, alert))
+        asyncio.create_task(process_alert_background(alert_id, alert_context))
         
         logger.info(f"Alert {alert_id} submitted successfully with type: {alert_data.alert_type}")
         
@@ -416,6 +426,9 @@ async def get_session_id(alert_id: str):
     Needed for dashboard websocket subscription because
     the client which sent the alert request needs to know the session ID (generated later)
     to subscribe to the alert updates."""
+    if alert_service is None:
+        raise HTTPException(status_code=503, detail="Service not initialized")
+    
     # Check if the alert_id exists
     if not alert_service.alert_exists(alert_id):
         raise HTTPException(status_code=404, detail=f"Alert ID '{alert_id}' not found")
@@ -430,6 +443,10 @@ async def get_session_id(alert_id: str):
 @app.websocket("/ws/dashboard/{user_id}")
 async def dashboard_websocket_endpoint(websocket: WebSocket, user_id: str):
     """WebSocket endpoint for dashboard real-time updates."""
+    if dashboard_manager is None:
+        await websocket.close(code=1011, reason="Service not initialized")
+        return
+        
     try:
         logger.info(f"🔌 New WebSocket connection from user: {user_id}")
         await dashboard_manager.connect(websocket, user_id)
@@ -468,33 +485,25 @@ async def dashboard_websocket_endpoint(websocket: WebSocket, user_id: str):
     finally:
         dashboard_manager.disconnect(user_id)
 
-
-async def process_alert_background(alert_id: str, alert: AlertProcessingData):
+async def process_alert_background(alert_id: str, alert: ChainContext):
     """Background task to process an alert with comprehensive error handling and concurrency control."""
+    if alert_processing_semaphore is None or alert_service is None:
+        logger.error(f"Cannot process alert {alert_id}: services not initialized")
+        return
+        
     async with alert_processing_semaphore:
         start_time = datetime.now()
         try:
             logger.info(f"Starting background processing for alert {alert_id}")
             
-            # Validate alert structure before processing (using Pydantic model)
-            if not alert:
-                raise ValueError("Invalid alert structure: alert object is required")
-            
-            if not alert.alert_type:
-                raise ValueError("Invalid alert structure: missing required field 'alert_type'")
-            
-            if not alert.alert_data or not isinstance(alert.alert_data, dict):
-                raise ValueError("Invalid alert structure: missing or invalid 'alert_data' field")
-            
             # Log alert processing start
-            alert_type = alert.alert_type or "unknown"
-            logger.info(f"Processing alert {alert_id} of type '{alert_type}' with {len(alert.alert_data)} data fields")
+            logger.info(f"Processing alert {alert_id} of type '{alert.alert_type}' with {len(alert.alert_data)} data fields")
             
             # Process with timeout to prevent hanging
             try:
                 # Set a reasonable timeout (e.g., 10 minutes for alert processing)
-                result = await asyncio.wait_for(
-                    alert_service.process_alert(alert, api_alert_id=alert_id),
+                await asyncio.wait_for(
+                    alert_service.process_alert(alert, alert_id=alert_id),
                     timeout=600  # 10 minutes
                 )
             except asyncio.TimeoutError:
@@ -519,11 +528,6 @@ async def process_alert_background(alert_id: str, alert: AlertProcessingData):
             error_msg = f"Connection error during processing: {str(e)}"
             logger.error(f"Alert {alert_id} connection error: {error_msg}")
             
-        except json.JSONDecodeError as e:
-            # JSON parsing errors in agent processing
-            error_msg = f"JSON parsing error in agent processing: {str(e)}"
-            logger.error(f"Alert {alert_id} JSON error: {error_msg}")
-            
         except MemoryError as e:
             # Memory issues with large payloads
             error_msg = "Processing failed due to memory constraints (payload too large)"
@@ -541,13 +545,12 @@ async def process_alert_background(alert_id: str, alert: AlertProcessingData):
         finally:
             # Clean up alert key tracking regardless of success or failure
             if alert:
-                alert_key = AlertKey.from_alert_data(alert)
-                alert_key_str = str(alert_key)
+                alert_key = AlertKey.from_chain_context(alert)
                 
                 async with alert_keys_lock:
-                    if alert_key_str in processing_alert_keys:
-                        del processing_alert_keys[alert_key_str]
-                        logger.debug(f"Cleaned up alert key tracking for {alert_key_str}")
+                    if alert_key in processing_alert_keys:
+                        del processing_alert_keys[alert_key]
+                        logger.debug(f"Cleaned up alert key tracking for {alert_key}")
 
 if __name__ == "__main__":
     import uvicorn

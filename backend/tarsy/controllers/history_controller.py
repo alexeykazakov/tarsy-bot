@@ -184,7 +184,7 @@ async def get_session_detail(
         HTTPException: 404 if session not found, 500 for internal errors
     """
     try:
-        detailed_session = history_service.get_session_timeline(session_id)
+        detailed_session = history_service.get_session_details(session_id)
         
         if not detailed_session:
             raise HTTPException(
@@ -275,7 +275,7 @@ async def health_check(
     """
     try:
         # Check if history service is enabled
-        if not history_service.enabled:
+        if not history_service.is_enabled:
             return HealthCheckResponse(
                 service="alert_processing_history",
                 status="disabled",

@@ -5,18 +5,25 @@ Tests the new typed hook infrastructure that provides type-safe
 interaction logging and dashboard updates.
 """
 
-import pytest
-from unittest.mock import Mock, AsyncMock, patch
-from datetime import datetime
+from unittest.mock import AsyncMock, Mock
 
-from tarsy.hooks.typed_history_hooks import TypedLLMHistoryHook, TypedMCPHistoryHook, TypedStageExecutionHistoryHook
-from tarsy.hooks.typed_dashboard_hooks import TypedLLMDashboardHook, TypedMCPDashboardHook
+import pytest
+
 from tarsy.hooks.typed_context import BaseTypedHook
-from tarsy.models.unified_interactions import LLMInteraction, MCPInteraction
-from tarsy.models.db_models import StageExecution
+from tarsy.hooks.typed_dashboard_hooks import (
+    TypedLLMDashboardHook,
+    TypedMCPDashboardHook,
+)
+from tarsy.hooks.typed_history_hooks import (
+    TypedLLMHistoryHook,
+    TypedMCPHistoryHook,
+    TypedStageExecutionHistoryHook,
+)
 from tarsy.models.constants import StageStatus
-from tarsy.services.history_service import HistoryService
+from tarsy.models.db_models import StageExecution
+from tarsy.models.unified_interactions import LLMInteraction, MCPInteraction
 from tarsy.services.dashboard_broadcaster import DashboardBroadcaster
+from tarsy.services.history_service import HistoryService
 
 
 @pytest.mark.unit
@@ -47,7 +54,7 @@ class TestTypedLLMHistoryHook:
     def mock_history_service(self):
         """Mock history service."""
         service = Mock(spec=HistoryService)
-        service.log_llm_interaction = Mock(return_value=True)
+        service.store_llm_interaction = Mock(return_value=True)
         return service
     
     @pytest.fixture
@@ -78,12 +85,12 @@ class TestTypedLLMHistoryHook:
         """Test successful execution logs interaction."""
         await llm_hook.execute(sample_llm_interaction)
         
-        mock_history_service.log_llm_interaction.assert_called_once_with(sample_llm_interaction)
+        mock_history_service.store_llm_interaction.assert_called_once_with(sample_llm_interaction)
     
     @pytest.mark.asyncio
     async def test_execute_handles_service_error(self, llm_hook, mock_history_service, sample_llm_interaction):
         """Test execution handles history service errors gracefully."""
-        mock_history_service.log_llm_interaction.side_effect = Exception("Database error")
+        mock_history_service.store_llm_interaction.side_effect = Exception("Database error")
         
         # Should raise the exception (hook doesn't catch it)
         with pytest.raises(Exception, match="Database error"):
@@ -98,7 +105,7 @@ class TestTypedMCPHistoryHook:
     def mock_history_service(self):
         """Mock history service."""
         service = Mock(spec=HistoryService)
-        service.log_mcp_interaction = Mock(return_value=True)
+        service.store_mcp_interaction = Mock(return_value=True)
         return service
     
     @pytest.fixture
@@ -129,7 +136,7 @@ class TestTypedMCPHistoryHook:
         """Test successful execution logs interaction."""
         await mcp_hook.execute(sample_mcp_interaction)
         
-        mock_history_service.log_mcp_interaction.assert_called_once_with(sample_mcp_interaction)
+        mock_history_service.store_mcp_interaction.assert_called_once_with(sample_mcp_interaction)
 
 
 @pytest.mark.unit
@@ -334,7 +341,7 @@ class TestTypedHooksIntegration:
         """Test that LLM hooks can be chained and executed."""
         # Create real services (but mocked externals)
         mock_history_service = Mock(spec=HistoryService)
-        mock_history_service.log_llm_interaction = Mock(return_value=True)
+        mock_history_service.store_llm_interaction = Mock(return_value=True)
         
         mock_broadcaster = AsyncMock(spec=DashboardBroadcaster)
         mock_broadcaster.broadcast_interaction_update = AsyncMock(return_value=3)
@@ -358,7 +365,7 @@ class TestTypedHooksIntegration:
         await dashboard_hook.execute(interaction)
         
         # Verify both executed
-        mock_history_service.log_llm_interaction.assert_called_once_with(interaction)
+        mock_history_service.store_llm_interaction.assert_called_once_with(interaction)
         mock_broadcaster.broadcast_interaction_update.assert_called_once()
     
     @pytest.mark.asyncio
@@ -374,8 +381,8 @@ class TestTypedHooksIntegration:
         mock_broadcaster.broadcast_session_update = AsyncMock(return_value=2)
         
         # Create hooks
-        from tarsy.hooks.typed_history_hooks import TypedStageExecutionHistoryHook
         from tarsy.hooks.typed_dashboard_hooks import TypedStageExecutionDashboardHook
+        from tarsy.hooks.typed_history_hooks import TypedStageExecutionHistoryHook
         
         history_hook = TypedStageExecutionHistoryHook(mock_history_service)
         dashboard_hook = TypedStageExecutionDashboardHook(mock_broadcaster)

@@ -6,29 +6,10 @@ all iteration controller implementations.
 """
 
 from abc import ABC, abstractmethod
-from dataclasses import dataclass
-from typing import Any, Dict, List, Optional, Union, TYPE_CHECKING
+from typing import TYPE_CHECKING, Callable, Optional, List
 
 if TYPE_CHECKING:
-    from ..base_agent import BaseAgent
-    from ...models.alert_processing import AlertProcessingData
-
-
-@dataclass
-class IterationContext:
-    """
-    Shared context for iterations within a single agent execution.
-    
-    This context contains only the common information needed between iterations
-    of the same agent - NOT for passing data between different stages/agents.
-    Data flows between iterations via prompts (e.g., ReAct history strings).
-    """
-    alert_data: Union[Dict[str, Any], 'AlertProcessingData']
-    runbook_content: str
-    available_tools: List[Dict[str, Any]]
-    session_id: str
-    agent: Optional['BaseAgent'] = None
-
+    from ...models.processing_context import StageContext
 
 class IterationController(ABC):
     """
@@ -49,12 +30,12 @@ class IterationController(ABC):
         pass
     
     @abstractmethod
-    async def execute_analysis_loop(self, context: IterationContext) -> str:
+    async def execute_analysis_loop(self, context: 'StageContext') -> str:
         """
-        Execute the complete analysis iteration loop.
+        Execute analysis loop with clean StageContext.
         
         Args:
-            context: Iteration context containing all necessary data
+            context: StageContext containing all stage processing data
             
         Returns:
             Final analysis result string
@@ -64,17 +45,17 @@ class IterationController(ABC):
     def create_result_summary(
         self, 
         analysis_result: str, 
-        context: IterationContext
+        context: 'StageContext'
     ) -> str:
         """
-        Create result summary from the iteration strategy's execution.
+        Create result summary with clean StageContext.
         
         Default implementation provides simple formatting. Individual strategies
         can override this method to provide specialized formatting.
         
         Args:
             analysis_result: Raw analysis text from execute_analysis_loop
-            context: Iteration context with access to all execution data
+            context: StageContext containing all stage processing data
             
         Returns:
             Formatted summary string for this iteration strategy
@@ -87,10 +68,10 @@ class IterationController(ABC):
     def extract_final_analysis(
         self, 
         analysis_result: str, 
-        context: IterationContext
+        context: 'StageContext'
     ) -> str:
         """
-        Extract clean final analysis from the iteration strategy's execution result.
+        Extract final analysis with clean StageContext.
         
         This method should extract a concise, user-friendly final analysis
         from the full analysis result for API consumption.
@@ -100,7 +81,7 @@ class IterationController(ABC):
         
         Args:
             analysis_result: Raw analysis text from execute_analysis_loop
-            context: Iteration context with access to all execution data
+            context: StageContext containing all stage processing data
             
         Returns:
             Clean final analysis string for API/dashboard consumption
@@ -115,8 +96,9 @@ class IterationController(ABC):
         analysis_result: str, 
         completion_patterns: list[str], 
         incomplete_patterns: list[str],
-        fallback_extractor: callable,
-        fallback_message: str
+        fallback_extractor: Optional[Callable[[List[str]], str]],
+        fallback_message: str,
+        context: 'StageContext'
     ) -> str:
         """
         Shared utility for extracting final analysis from ReAct conversations.
@@ -125,8 +107,9 @@ class IterationController(ABC):
             analysis_result: Full ReAct conversation history
             completion_patterns: List of patterns to look for completion messages
             incomplete_patterns: List of patterns for incomplete messages
-            fallback_extractor: Function to extract fallback data from lines
+            fallback_extractor: Function to extract fallback data from list of strings
             fallback_message: Default message if no analysis found
+            context: StageContext containing all stage processing data
             
         Returns:
             Extracted final analysis

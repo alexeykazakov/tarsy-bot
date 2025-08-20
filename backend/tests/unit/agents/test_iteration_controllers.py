@@ -6,48 +6,21 @@ and provide the expected processing patterns for agent execution.
 """
 
 from unittest.mock import AsyncMock, Mock, patch
+
 import pytest
 
-from tarsy.agents.iteration_controllers.base_iteration_controller import (
-    IterationContext,
+from tarsy.agents.iteration_controllers.react_controller import SimpleReActController
+from tarsy.agents.iteration_controllers.react_final_analysis_controller import (
+    ReactFinalAnalysisController,
 )
-from tarsy.agents.iteration_controllers.react_iteration_controller import SimpleReActController
-from tarsy.agents.iteration_controllers.react_final_analysis_controller import ReactFinalAnalysisController
-from tarsy.agents.iteration_controllers.react_stage_controller import ReactStageController
+from tarsy.agents.iteration_controllers.react_stage_controller import (
+    ReactStageController,
+)
 from tarsy.models.constants import IterationStrategy
+from tarsy.models.processing_context import AvailableTools, ChainContext, StageContext
 
-
-@pytest.mark.unit
-class TestIterationContext:
-    """Test IterationContext dataclass functionality."""
-    
-    def test_iteration_context_creation(self):
-        """Test creating iteration context with required fields."""
-        context = IterationContext(
-            alert_data={"alert": "test"},
-            runbook_content="test runbook",
-            available_tools=[{"name": "test-tool"}],
-            session_id="test-session-123"
-        )
-        
-        assert context.alert_data == {"alert": "test"}
-        assert context.runbook_content == "test runbook"
-        assert context.available_tools == [{"name": "test-tool"}]
-        assert context.session_id == "test-session-123"
-        assert context.agent is None  # Default value
-    
-    def test_iteration_context_with_agent(self):
-        """Test creating iteration context with agent reference."""
-        mock_agent = Mock()
-        context = IterationContext(
-            alert_data={"alert": "test"},
-            runbook_content="test runbook",
-            available_tools=[],
-            session_id="test-session-123",
-            agent=mock_agent
-        )
-        
-        assert context.agent == mock_agent
+# TestIterationContext removed - IterationContext class no longer exists
+# It was replaced by StageContext in the EP-0012 context architecture redesign
 
 
 # Removed TestRegularIterationController - REGULAR strategy no longer supported
@@ -93,7 +66,7 @@ class TestSimpleReActController:
         """Create mock agent for ReAct testing."""
         agent = Mock()
         agent.max_iterations = 3
-        agent.create_prompt_context.return_value = Mock()
+        # EP-0012: create_prompt_context method removed, using StageContext directly
         agent.execute_mcp_tools = AsyncMock(return_value={
             "test-server": [{"tool": "test-tool", "result": "success"}]
         })
@@ -107,12 +80,17 @@ class TestSimpleReActController:
     
     @pytest.fixture
     def sample_context(self, mock_agent):
-        """Create sample iteration context for ReAct testing."""
-        return IterationContext(
+        """Create sample stage context for ReAct testing."""
+        chain_context = ChainContext(
+            alert_type="test",
             alert_data={"alert": "TestAlert", "severity": "high"},
-            runbook_content="Test runbook content",
-            available_tools=[{"name": "test-tool"}],
             session_id="test-session-123",
+            current_stage_name="analysis"
+        )
+        available_tools = AvailableTools(tools=[])
+        return StageContext(
+            chain_context=chain_context,
+            available_tools=available_tools,
             agent=mock_agent
         )
     
@@ -136,11 +114,16 @@ class TestSimpleReActController:
     @pytest.mark.asyncio
     async def test_execute_analysis_loop_no_agent(self, controller):
         """Test ReAct analysis loop with missing agent reference."""
-        context = IterationContext(
-            alert_data={},
-            runbook_content="",
-            available_tools=[],
+        chain_context = ChainContext(
+            alert_type="test",
+            alert_data={"pod": "test-pod", "namespace": "default"},  # EP-0012: alert_data must not be empty
             session_id="test-session-123",
+            current_stage_name="analysis"
+        )
+        available_tools = AvailableTools(tools=[])
+        context = StageContext(
+            chain_context=chain_context,
+            available_tools=available_tools,
             agent=None
         )
         
@@ -269,7 +252,7 @@ class TestReactFinalAnalysisController:
     def mock_agent(self):
         """Create mock agent for final analysis testing."""
         agent = Mock()
-        agent.create_prompt_context.return_value = Mock()
+        # EP-0012: create_prompt_context method removed, using StageContext directly
         agent.get_current_stage_execution_id.return_value = "stage-exec-123"
         agent._get_general_instructions.return_value = "## General SRE Agent Instructions\nYou are an expert SRE..."
         agent.custom_instructions.return_value = "Custom agent instructions here"
@@ -282,12 +265,17 @@ class TestReactFinalAnalysisController:
     
     @pytest.fixture
     def sample_context(self, mock_agent):
-        """Create sample iteration context for final analysis testing."""
-        return IterationContext(
+        """Create sample stage context for final analysis testing."""
+        chain_context = ChainContext(
+            alert_type="test",
             alert_data={"alert": "TestAlert", "severity": "high"},
-            runbook_content="Test runbook content",
-            available_tools=[{"name": "test-tool"}],
             session_id="test-session-123",
+            current_stage_name="analysis"
+        )
+        available_tools = AvailableTools(tools=[])
+        return StageContext(
+            chain_context=chain_context,
+            available_tools=available_tools,
             agent=mock_agent
         )
     
@@ -302,15 +290,9 @@ class TestReactFinalAnalysisController:
         
         assert result == "Comprehensive final analysis complete"
         
-        # Verify agent context creation was called properly
-        mock_agent.create_prompt_context.assert_called_once()
-        call_args = mock_agent.create_prompt_context.call_args[1]
-        assert call_args["alert_data"] == sample_context.alert_data
-        assert call_args["runbook_content"] == sample_context.runbook_content
-        assert call_args["available_tools"] is None
-        assert call_args["stage_name"] is None  # No stage name in unit test context (plain dict)
-        assert call_args["is_final_stage"] is True
-        assert call_args["previous_stages"] is None  # Handled by chain context
+        # EP-0012: Prompt context creation now handled by StageContext and prompt builders
+        # No separate create_prompt_context method in clean implementation
+        # EP-0012: StageContext provides context data directly, no manual context creation needed
         
         # Verify prompt building was called
         mock_prompt_builder.build_final_analysis_prompt.assert_called_once()
@@ -332,11 +314,16 @@ class TestReactFinalAnalysisController:
     @pytest.mark.asyncio
     async def test_execute_analysis_loop_no_agent(self, controller):
         """Test final analysis loop with missing agent reference."""
-        context = IterationContext(
-            alert_data={},
-            runbook_content="",
-            available_tools=[],
+        chain_context = ChainContext(
+            alert_type="test",
+            alert_data={"pod": "test-pod", "namespace": "default"},  # EP-0012: alert_data must not be empty
             session_id="test-session-123",
+            current_stage_name="analysis"
+        )
+        available_tools = AvailableTools(tools=[])
+        context = StageContext(
+            chain_context=chain_context,
+            available_tools=available_tools,
             agent=None
         )
         
@@ -351,18 +338,21 @@ class TestReactFinalAnalysisController:
         
         assert result == "Comprehensive final analysis complete"
         
-        # Verify context creation was called correctly
-        call_args = mock_agent.create_prompt_context.call_args[1]
-        assert call_args["available_tools"] is None  # Empty for final analysis
+        # EP-0012: Context creation handled by StageContext directly
     
     @pytest.mark.asyncio
     async def test_execute_analysis_loop_minimal_context(self, controller, mock_agent, mock_llm_client, mock_prompt_builder):
         """Test final analysis with minimal context."""
-        context = IterationContext(
+        chain_context = ChainContext(
+            alert_type="test",
             alert_data={"alert": "TestAlert"},
-            runbook_content="Test runbook",
-            available_tools=[],
             session_id="test-session-123",
+            current_stage_name="analysis"
+        )
+        available_tools = AvailableTools(tools=[])
+        context = StageContext(
+            chain_context=chain_context,
+            available_tools=available_tools,
             agent=mock_agent
         )
         
@@ -370,10 +360,7 @@ class TestReactFinalAnalysisController:
         
         assert result == "Comprehensive final analysis complete"
         
-        # Verify context creation used correct parameters
-        call_args = mock_agent.create_prompt_context.call_args[1]
-        assert call_args["available_tools"] is None  # Empty for final analysis
-        assert call_args["previous_stages"] is None  # Handled by chain context
+        # EP-0012: Context creation handled by StageContext and prompt builders directly
     
     @pytest.mark.asyncio
     async def test_execute_analysis_loop_llm_failure(self, controller, sample_context, mock_llm_client):
@@ -424,7 +411,7 @@ class TestReactStageController:
         """Create mock agent for partial analysis testing."""
         agent = Mock()
         agent.max_iterations = 3
-        agent.create_prompt_context.return_value = Mock()
+        # EP-0012: create_prompt_context method removed, using StageContext directly
         agent.get_current_stage_execution_id.return_value = "stage-exec-789"
         agent.execute_mcp_tools = AsyncMock(return_value={
             "analysis-server": [{"tool": "analysis-tool", "result": "analysis data"}]
@@ -440,14 +427,18 @@ class TestReactStageController:
     
     @pytest.fixture
     def sample_context(self, mock_agent):
-        """Create sample iteration context for partial analysis testing."""
-        return IterationContext(
+        """Create sample stage context for partial analysis testing."""
+        chain_context = ChainContext(
+            alert_type="test",
             alert_data={"alert": "TestAlert", "severity": "high"},
-            runbook_content="Test runbook content",
-            available_tools=[{"name": "analysis-tool"}],
             session_id="test-session-789",
-            agent=mock_agent,
-
+            current_stage_name="analysis"
+        )
+        available_tools = AvailableTools(tools=[])
+        return StageContext(
+            chain_context=chain_context,
+            available_tools=available_tools,
+            agent=mock_agent
         )
     
     def test_needs_mcp_tools(self, controller):
@@ -463,11 +454,7 @@ class TestReactStageController:
         assert "Thought: Need to analyze partially" in result
         assert "Final Answer: Partial analysis complete" in result
         
-        # Verify agent context creation
-        mock_agent.create_prompt_context.assert_called_once()
-        call_args = mock_agent.create_prompt_context.call_args[1]
-        assert call_args["stage_name"] is None  # No stage name in unit test context (plain dict)
-        assert call_args["available_tools"] == {"tools": sample_context.available_tools}
+        # EP-0012: Agent context creation handled by StageContext directly
         
         # Verify prompt building
         mock_prompt_builder.build_stage_analysis_react_prompt.assert_called_once()
@@ -478,11 +465,16 @@ class TestReactStageController:
     @pytest.mark.asyncio
     async def test_execute_analysis_loop_no_agent(self, controller):
         """Test partial analysis loop with missing agent reference."""
-        context = IterationContext(
-            alert_data={},
-            runbook_content="",
-            available_tools=[],
+        chain_context = ChainContext(
+            alert_type="test",
+            alert_data={"pod": "test-pod", "namespace": "default"},  # EP-0012: alert_data must not be empty
             session_id="test-session-123",
+            current_stage_name="analysis"
+        )
+        available_tools = AvailableTools(tools=[])
+        context = StageContext(
+            chain_context=chain_context,
+            available_tools=available_tools,
             agent=None
         )
         
@@ -741,12 +733,16 @@ The issue is caused by a stuck finalizer.
 - Monitor operator health
 - Implement cleanup policies"""
         
+        # Mock StageContext for testing
+        mock_context = Mock(spec=StageContext)
+        
         result = controller._extract_react_final_analysis(
             analysis_result=test_response,
             completion_patterns=["Analysis completed"],
             incomplete_patterns=["Analysis incomplete:"],
             fallback_extractor=None,
-            fallback_message="No analysis found"
+            fallback_message="No analysis found",
+            context=mock_context
         )
         
         # Verify the full content was extracted
@@ -769,12 +765,16 @@ The issue is caused by a stuck finalizer.
         test_response = """Thought: Analysis complete.
 Final Answer: Simple analysis result."""
         
+        # Mock StageContext for testing
+        mock_context = Mock(spec=StageContext)
+        
         result = controller._extract_react_final_analysis(
             analysis_result=test_response,
             completion_patterns=["Analysis completed"],
             incomplete_patterns=["Analysis incomplete:"],
             fallback_extractor=None,
-            fallback_message="No analysis found"
+            fallback_message="No analysis found",
+            context=mock_context
         )
         
         assert result == "Simple analysis result."
@@ -789,12 +789,16 @@ This continues the analysis.
 Thought: This should not be included.
 Action: some-action"""
         
+        # Mock StageContext for testing
+        mock_context = Mock(spec=StageContext)
+        
         result = controller._extract_react_final_analysis(
             analysis_result=test_response,
             completion_patterns=["Analysis completed"],
             incomplete_patterns=["Analysis incomplete:"],
             fallback_extractor=None,
-            fallback_message="No analysis found"
+            fallback_message="No analysis found",
+            context=mock_context
         )
         
         assert result == "This is the analysis result.\nThis continues the analysis."

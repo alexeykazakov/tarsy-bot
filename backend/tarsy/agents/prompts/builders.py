@@ -1,18 +1,19 @@
 """
 LangChain-based prompt builder with template composition.
 
-This module implements the new PromptBuilder using LangChain templates
-while maintaining backward compatibility with existing APIs.
+This module implements the PromptBuilder using LangChain templates
+for clean, composable prompt generation.
 """
 
 import json
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any, List, Optional, TYPE_CHECKING
 from tarsy.utils.logger import get_module_logger
+
+if TYPE_CHECKING:
+    from tarsy.models.processing_context import StageContext
 from .components import (
     AlertSectionTemplate, 
-    RunbookSectionTemplate, 
-    ChainContextSectionTemplate,
-    PromptContext
+    RunbookSectionTemplate
 )
 from .templates import (
     ANALYSIS_QUESTION_TEMPLATE,
@@ -22,7 +23,6 @@ from .templates import (
     STAGE_ANALYSIS_QUESTION_TEMPLATE,
     STANDARD_REACT_PROMPT_TEMPLATE,
 )
-
 
 logger = get_module_logger(__name__)
 
@@ -34,50 +34,64 @@ class PromptBuilder:
         # Initialize component templates
         self.alert_component = AlertSectionTemplate()
         self.runbook_component = RunbookSectionTemplate()
-        self.chain_context_component = ChainContextSectionTemplate()
     
     # ============ Main Prompt Building Methods ============
     
-    def build_standard_react_prompt(self, context: PromptContext, react_history: Optional[List[str]] = None) -> str:
-        """Build standard ReAct prompt using templates. Used by SimpleReActController."""
-        # Build question components
+    def build_standard_react_prompt(self, context: 'StageContext', react_history: Optional[List[str]] = None) -> str:
+        """Build standard ReAct prompt."""
+        logger.debug("Building ReAct prompt")
+        # Build question components using StageContext properties directly
         alert_section = self.alert_component.format(context.alert_data)
         runbook_section = self.runbook_component.format(context.runbook_content)
-        chain_context = self.chain_context_component.format(context)
+        
+        # Use StageContext's built-in previous stages formatting
+        previous_stages_context = context.format_previous_stages_context()
+        if previous_stages_context == "No previous stage context available.":
+            chain_context = ""
+        else:
+            chain_context = f"\n## Previous Stage Results\n\n{previous_stages_context}"
         
         # Build question
-        alert_type = context.alert_data.get('alert_type', context.alert_data.get('alert', 'Unknown Alert'))
         question = ANALYSIS_QUESTION_TEMPLATE.format(
-            alert_type=alert_type,
+            alert_type=context.chain_context.alert_type,
             alert_section=alert_section,
             runbook_section=runbook_section,
             chain_context=chain_context
         )
         
-        # Build final prompt
+        # Build final prompt  
         history_text = ""
         if react_history:
             flattened_history = self._flatten_react_history(react_history)
             history_text = "\n".join(flattened_history) + "\n"
         
+        # Format available tools from StageContext
+        available_tools_dict = {"tools": [tool for tool in context.available_tools.tools]}
+        
         return STANDARD_REACT_PROMPT_TEMPLATE.format(
-            available_actions=self._format_available_actions(context.available_tools),
+            available_actions=self._format_available_actions(available_tools_dict),
             question=question,
             history_text=history_text
         )
     
-    def build_stage_analysis_react_prompt(self, context: PromptContext, react_history: Optional[List[str]] = None) -> str:
-        """Build ReAct prompt for stage-specific analysis. Used by ReactStageController."""
-        # Build question components
+    def build_stage_analysis_react_prompt(self, context: 'StageContext', react_history: Optional[List[str]] = None) -> str:
+        """Build stage analysis ReAct prompt."""
+        logger.debug("Building stage analysis ReAct prompt")
+        # Build question components using StageContext properties directly
         alert_section = self.alert_component.format(context.alert_data)
         runbook_section = self.runbook_component.format(context.runbook_content)
-        chain_context = self.chain_context_component.format(context)
+        
+        # Use StageContext's built-in previous stages formatting
+        previous_stages_context = context.format_previous_stages_context()
+        if previous_stages_context == "No previous stage context available.":
+            chain_context = ""
+        else:
+            chain_context = f"\n## Previous Stage Results\n\n{previous_stages_context}"
         
         # Build question
-        alert_type = context.alert_data.get('alert_type', context.alert_data.get('alert', 'Unknown Alert'))
         stage_name = context.stage_name or "analysis"
         question = STAGE_ANALYSIS_QUESTION_TEMPLATE.format(
-            alert_type=alert_type,
+            alert_type=context.chain_context.alert_type,
             alert_section=alert_section,
             runbook_section=runbook_section,
             chain_context=chain_context,
@@ -90,27 +104,40 @@ class PromptBuilder:
             flattened_history = self._flatten_react_history(react_history)
             history_text = "\n".join(flattened_history) + "\n"
         
+        # Format available tools from StageContext
+        available_tools_dict = {"tools": [tool for tool in context.available_tools.tools]}
+        
         return STANDARD_REACT_PROMPT_TEMPLATE.format(
-            available_actions=self._format_available_actions(context.available_tools),
+            available_actions=self._format_available_actions(available_tools_dict),
             question=question,
             history_text=history_text
         )
     
-    def build_final_analysis_prompt(self, context: PromptContext) -> str:
-        """Build prompt for final analysis without ReAct format. Used by ReactFinalAnalysisController."""
+    def build_final_analysis_prompt(self, context: 'StageContext') -> str:
+        """Build final analysis prompt."""
+        logger.debug("Building final analysis prompt")
         stage_info = ""
         if context.stage_name:
             stage_info = f"\n**Stage:** {context.stage_name}"
-            if context.is_final_stage:
-                stage_info += " (Final Analysis Stage)"
-            if context.previous_stages:
-                stage_info += f"\n**Previous Stages:** {', '.join(context.previous_stages)}"
+            stage_info += " (Final Analysis Stage)"  # Could add is_final_stage to StageContext if needed
             stage_info += "\n"
         
-        context_section = self._build_context_section(context)
+        # Build context section manually since we don't have the old helper
+        server_list = ", ".join(context.mcp_servers)
+        context_section = CONTEXT_SECTION_TEMPLATE.format(
+            agent_name=context.agent_name,
+            server_list=server_list
+        )
+        
         alert_section = self.alert_component.format(context.alert_data)
         runbook_section = self.runbook_component.format(context.runbook_content)
-        chain_context = self.chain_context_component.format(context)
+        
+        # Use StageContext's built-in previous stages formatting
+        previous_stages_context = context.format_previous_stages_context()
+        if previous_stages_context == "No previous stage context available.":
+            chain_context = ""
+        else:
+            chain_context = f"\n## Previous Stage Results\n\n{previous_stages_context}"
         
         return FINAL_ANALYSIS_PROMPT_TEMPLATE.format(
             stage_info=stage_info,
@@ -150,39 +177,31 @@ Focus on root cause analysis and sustainable solutions."""
     
     # ============ Helper Methods (Keep Current Logic) ============
     
-    def _build_context_section(self, context: PromptContext) -> str:
+    def _build_context_section(self, context: 'StageContext') -> str:
         """Build the context section using template."""
         server_list = ", ".join(context.mcp_servers)
         return CONTEXT_SECTION_TEMPLATE.format(
             agent_name=context.agent_name,
             server_list=server_list
         )
-    
-    def _build_alert_section(self, alert_data: Dict[str, Any]) -> str:
-        """Backward compatibility method - delegates to alert component."""
-        return self.alert_component.format(alert_data)
-    
-    def _build_runbook_section(self, runbook_content: str) -> str:
-        """Backward compatibility method - delegates to runbook component."""
-        return self.runbook_component.format(runbook_content)
-        
-    def _build_chain_context_section(self, context: PromptContext) -> str:
-        """Backward compatibility method - delegates to chain context component."""
-        return self.chain_context_component.format(context)
-    
+
     def _format_available_actions(self, available_tools: Dict[str, Any]) -> str:
-        """Format available tools as ReAct actions."""
+        """Format available tools as ReAct actions. EP-0012 clean implementation - MCPTool objects only."""
         if not available_tools or not available_tools.get("tools"):
             return "No tools available."
         
         actions = []
         for tool in available_tools["tools"]:
-            action_name = f"{tool.get('server', 'unknown')}.{tool.get('name', tool.get('tool', 'unknown'))}"
-            description = tool.get('description', 'No description available')
+            # EP-0012 clean implementation: only MCPTool objects, no legacy compatibility
+            action_name = f"{tool.server}.{tool.name}"
+            description = tool.description
             
-            parameters = tool.get('input_schema', {}).get('properties', {})
-            if parameters:
-                param_desc = ', '.join([f"{k}: {v.get('description', 'no description')}" for k, v in parameters.items()])
+            if tool.parameters:
+                # MCPTool.parameters is List[Dict[str, Any]]
+                param_desc = ', '.join([
+                    f"{param.get('name', 'param')}: {param.get('description', 'no description')}" 
+                    for param in tool.parameters
+                ])
                 actions.append(f"{action_name}: {description}\n  Parameters: {param_desc}")
             else:
                 actions.append(f"{action_name}: {description}")

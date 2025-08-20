@@ -11,10 +11,10 @@ import pytest
 from tarsy.agents.kubernetes_agent import KubernetesAgent
 from tarsy.integrations.llm.client import LLMManager
 from tarsy.integrations.mcp.client import MCPClient
+from tarsy.models.constants import StageStatus
 from tarsy.services.agent_factory import AgentFactory
 from tarsy.services.agent_registry import AgentRegistry
 from tarsy.services.mcp_server_registry import MCPServerRegistry
-from tarsy.models.constants import StageStatus
 
 
 @pytest.mark.asyncio
@@ -228,48 +228,9 @@ class TestKubernetesAgentIntegration:
         instructions = agent.custom_instructions()
         assert isinstance(instructions, str)  # May be empty but should be string
 
-    def test_kubernetes_agent_prompt_context_creation(
-        self, 
-        mock_llm_manager, 
-        mock_mcp_client, 
-        mock_mcp_server_registry,
-        sample_alert,
-        sample_runbook_content
-    ):
-        """Test KubernetesAgent prompt context creation with Kubernetes-specific data."""
-        # Arrange
-        agent = KubernetesAgent(
-            llm_client=mock_llm_manager.get_client(),
-            mcp_client=mock_mcp_client,
-            mcp_registry=mock_mcp_server_registry
-        )
-        
-        alert_data = {
-            "alert": sample_alert.alert_type,
-            "namespace": sample_alert.data.get('namespace', ''),
-            "message": sample_alert.data.get('message', '')
-        }
-        
-        available_tools = {
-            "tools": [
-                {"name": "kubectl_get_namespace", "server": "kubernetes-server"},
-                {"name": "kubectl_get_pods", "server": "kubernetes-server"}
-            ]
-        }
-        
-        # Act
-        context = agent.create_prompt_context(
-            alert_data=alert_data, 
-            runbook_content=sample_runbook_content, 
-            available_tools=available_tools
-        )
-        
-        # Assert
-        assert context.agent_name == "KubernetesAgent"
-        assert context.alert_data == alert_data
-        assert context.runbook_content == sample_runbook_content
-        assert context.available_tools == available_tools
-        assert context.mcp_servers == ["kubernetes-server"]
+    # EP-0012 Clean Implementation: create_prompt_context method removed
+    # Context creation now handled by StageContext in the clean architecture
+    # This functionality is tested through the full processing pipeline tests
 
 
 @pytest.mark.asyncio
@@ -334,8 +295,8 @@ class TestMCPClientIntegration:
         # Arrange - Use the provided mock_mcp_client fixture which already returns 2 tools
         client = mock_mcp_client
         
-        # Act
-        tools = await client.list_tools("kubernetes-server")
+        # Act - Fix: list_tools requires session_id as first parameter
+        tools = await client.list_tools("test-session-123", server_name="kubernetes-server")
         
         # Assert
         assert "kubernetes-server" in tools
@@ -414,16 +375,18 @@ class TestServiceInteractionPatterns:
             mcp_registry=mock_mcp_server_registry
         )
         
-        # Create AlertProcessingData for the new architecture
-        from tarsy.models.alert_processing import AlertProcessingData
-        alert_processing_data = AlertProcessingData(
+        # Create ChainContext for the new architecture
+        from tarsy.models.processing_context import ChainContext
+        chain_context = ChainContext(
             alert_type=sample_alert.alert_type,
             alert_data=sample_alert.data,
+            session_id="test-session-integration",
+            current_stage_name="analysis",
             runbook_content=sample_runbook_content
         )
         
         # Act
-        result = await agent.process_alert(alert_processing_data, "test-session-integration")
+        result = await agent.process_alert(chain_context)
         
         # Assert
         from tarsy.models.agent_execution_result import AgentExecutionResult
@@ -457,13 +420,15 @@ class TestErrorPropagationBetweenComponents:
         )
         
         # Act
-        from tarsy.models.alert_processing import AlertProcessingData
-        alert_processing_data = AlertProcessingData(
+        from tarsy.models.processing_context import ChainContext
+        chain_context = ChainContext(
             alert_type=sample_alert.alert_type,
             alert_data=sample_alert.data,
+            session_id="test-session-integration",
+            current_stage_name="analysis",
             runbook_content=sample_runbook_content
         )
-        result = await agent.process_alert(alert_processing_data, "test-session-integration")
+        result = await agent.process_alert(chain_context)
         
         # Assert - Agent should handle MCP errors gracefully
         assert result is not None
@@ -488,13 +453,15 @@ class TestErrorPropagationBetweenComponents:
         )
         
         # Act
-        from tarsy.models.alert_processing import AlertProcessingData
-        alert_processing_data = AlertProcessingData(
+        from tarsy.models.processing_context import ChainContext
+        chain_context = ChainContext(
             alert_type=sample_alert.alert_type,
             alert_data=sample_alert.data,
+            session_id="test-session-integration",
+            current_stage_name="analysis",
             runbook_content=sample_runbook_content
         )
-        result = await agent.process_alert(alert_processing_data, "test-session-integration")
+        result = await agent.process_alert(chain_context)
         
         # Assert - Agent should handle LLM errors gracefully
         assert result is not None

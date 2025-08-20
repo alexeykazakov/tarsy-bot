@@ -1,5 +1,5 @@
 """
-Simple ReAct iteration controller implementing the standard ReAct pattern.
+ReAct iteration controller for standard investigation and analysis.
 
 This controller follows the ReAct format:
 - Question: The alert analysis question
@@ -15,68 +15,50 @@ that LLMs are specifically trained to handle.
 
 from typing import TYPE_CHECKING
 
-from tarsy.utils.logger import get_module_logger
 from tarsy.models.unified_interactions import LLMMessage
-from .base_iteration_controller import IterationController, IterationContext
+from tarsy.utils.logger import get_module_logger
+from .base_controller import IterationController
 
 if TYPE_CHECKING:
-    from tarsy.integrations.llm.client import LLMClient
-    from tarsy.agents.prompt_builder import PromptBuilder
+    from ...models.processing_context import StageContext
+
 logger = get_module_logger(__name__)
 
 
 class SimpleReActController(IterationController):
     """
-    Simple ReAct controller following the standard Thought-Action-Observation pattern.
+    Standard ReAct controller for systematic investigation.
     
-    This controller implements the true ReAct pattern where the LLM follows
-    a structured format to reason about the problem, take actions, observe
-    results, and continue until reaching a final answer.
-    
-    Key features:
-    - Uses standard ReAct prompting format that LLMs are trained on
-    - Structured parsing of ReAct responses  
-    - Simple iterative loop with clear error handling
-    - Clean separation between reasoning and tool execution
+    Uses thought-action-observation loops to systematically investigate
+    alerts and provide comprehensive analysis.
     """
     
-    def __init__(self, llm_client: 'LLMClient', prompt_builder: 'PromptBuilder'):
-        """Initialize with proper type annotations."""
+    def __init__(self, llm_client, prompt_builder):
+        """Initialize with LLM client and prompt builder."""
         self.llm_client = llm_client
         self.prompt_builder = prompt_builder
+        logger.info("Initialized SimpleReActController for systematic investigation")
     
     def needs_mcp_tools(self) -> bool:
         """ReAct iteration requires MCP tool discovery."""
         return True
         
-    async def execute_analysis_loop(self, context: IterationContext) -> str:
-        """Execute simple ReAct loop following the standard pattern."""
+    async def execute_analysis_loop(self, context: 'StageContext') -> str:
+        """Execute ReAct loop."""
         logger.info("Starting Standard ReAct analysis loop")
-        
         agent = context.agent
-        if not agent:
+        if agent is None:
             raise ValueError("Agent reference is required in context")
-        
+
         max_iterations = agent.max_iterations
         react_history = []
-        
-        # Get actual stage name from AlertProcessingData (or None for non-chain execution)
-        stage_name = getattr(context.alert_data, 'current_stage_name', None)
-        
-        # Create initial prompt context
-        prompt_context = agent.create_prompt_context(
-            alert_data=context.alert_data,
-            runbook_content=context.runbook_content,
-            available_tools={"tools": context.available_tools},
-            stage_name=stage_name
-        )
         
         for iteration in range(max_iterations):
             logger.info(f"ReAct iteration {iteration + 1}/{max_iterations}")
             
             try:
-                # Build ReAct prompt with history
-                prompt = self.prompt_builder.build_standard_react_prompt(prompt_context, react_history)
+                # Pass StageContext directly - no conversion needed
+                prompt = self.prompt_builder.build_standard_react_prompt(context, react_history)
                 
                 # Get LLM response in ReAct format with enhanced system message
                 composed_instructions = agent._compose_instructions()
@@ -88,7 +70,7 @@ class SimpleReActController(IterationController):
                     LLMMessage(role="user", content=prompt)
                 ]
                 
-                response = await self.llm_client.generate_response(messages, context.session_id, agent.get_current_stage_execution_id())
+                response = await self.llm_client.generate_response(messages, context.session_id, context.agent.get_current_stage_execution_id())
                 logger.debug(f"LLM Response (first 500 chars): {response[:500]}")
                 
                 # Parse ReAct response
@@ -174,7 +156,7 @@ Please provide a final answer based on what you've discovered, even if the inves
                 LLMMessage(role="user", content=final_prompt)
             ]
             
-            fallback_response = await self.llm_client.generate_response(messages, context.session_id, agent.get_current_stage_execution_id())
+            fallback_response = await self.llm_client.generate_response(messages, context.session_id, context.agent.get_current_stage_execution_id())
             # Include history plus fallback analysis
             react_history.append(f"Analysis completed (reached max iterations):\n{fallback_response}")
             return "\n".join(react_history)
@@ -209,5 +191,6 @@ Please provide a final answer based on what you've discovered, even if the inves
             completion_patterns=["Analysis completed"],
             incomplete_patterns=["Analysis incomplete:"],
             fallback_extractor=extract_thoughts,
-            fallback_message="Analysis completed but no clear final answer was provided"
+            fallback_message="Analysis completed but no clear final answer was provided",
+            context=context
         )

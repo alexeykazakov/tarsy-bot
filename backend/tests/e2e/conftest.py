@@ -6,15 +6,15 @@ unit or integration tests. All environment variables, database files,
 and global state are properly isolated and cleaned up.
 """
 
+import logging
 import os
+import shutil
+import sys
 import tempfile
 import uuid
-import logging
-import sys
 from contextlib import contextmanager, suppress
 from pathlib import Path
 from unittest.mock import patch
-import shutil
 
 import pytest
 
@@ -31,6 +31,17 @@ class E2ETestIsolation:
         self.original_sys_modules = {}
     
     def __enter__(self):
+        # CRITICAL: Reset global singletons and caches BEFORE e2e test setup
+        # This prevents contamination from other tests that ran in the same pytest session
+        with suppress(Exception):
+            import tarsy.services.history_service
+            tarsy.services.history_service._history_service = None
+            
+        # Clear cached settings to ensure environment changes take effect
+        with suppress(Exception):
+            import tarsy.config.settings
+            tarsy.config.settings.get_settings.cache_clear()
+        
         # Create isolated temporary directory for this test
         self.temp_dir = Path(tempfile.mkdtemp(prefix="tarsy_e2e_test_"))
         
@@ -243,9 +254,14 @@ def isolated_test_database(e2e_isolation):
     db_url = e2e_isolation.create_temp_database()
     
     # Initialize the database in complete isolation
+    from sqlmodel import Session, SQLModel, create_engine
+
     from tarsy.database.init_db import initialize_database
     from tarsy.repositories.base_repository import DatabaseManager
-    from sqlmodel import Session, SQLModel, create_engine
+    
+    # CRITICAL: Import all models FIRST to ensure they're registered with SQLModel.metadata
+    import tarsy.models.db_models  # noqa: F401
+    import tarsy.models.unified_interactions  # noqa: F401
     
     # Create isolated database engine
     engine = create_engine(db_url, echo=False)
@@ -270,8 +286,8 @@ def isolated_test_database(e2e_isolation):
             # Try direct table creation
             try:
                 # Import all models to ensure they're registered
-                from tarsy.models.db_models import AlertSession, StageExecution
-                from tarsy.models.unified_interactions import LLMInteraction, MCPInteraction
+                from tarsy.models.db_models import AlertSession, StageExecution  # noqa: F401
+                from tarsy.models.unified_interactions import LLMInteraction, MCPInteraction  # noqa: F401
                 
                 SQLModel.metadata.create_all(engine)
                 success = True
@@ -288,6 +304,17 @@ def ensure_e2e_isolation(request):
     if "e2e" not in request.node.nodeid:
         yield
         return
+    
+    # CRITICAL: Reset global singletons and caches at the START of each e2e test
+    # This ensures e2e tests get fresh instances even when running with other tests
+    with suppress(Exception):
+        import tarsy.services.history_service
+        tarsy.services.history_service._history_service = None
+        
+    # Clear cached settings to ensure environment changes take effect
+    with suppress(Exception):
+        import tarsy.config.settings
+        tarsy.config.settings.get_settings.cache_clear()
     
     # Store original environment for e2e tests
     original_env = {}
@@ -332,6 +359,7 @@ def ensure_e2e_isolation(request):
 def e2e_test_client(isolated_e2e_settings):
     """Create an isolated FastAPI test client for e2e tests."""
     from fastapi.testclient import TestClient
+
     from tarsy.main import app
     
     # The isolated settings are already patched globally

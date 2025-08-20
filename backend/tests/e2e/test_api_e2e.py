@@ -7,10 +7,11 @@ database persistence, and comprehensive API data structures.
 Uses isolated e2e test fixtures to prevent interference with unit/integration tests.
 """
 
+import asyncio
 from unittest.mock import AsyncMock, Mock, patch
 
-import asyncio
 import pytest
+
 
 @pytest.mark.asyncio
 @pytest.mark.e2e
@@ -156,7 +157,10 @@ Action Input: {step['action_input']}"""
                     content = f"""Final Answer: Stage {current_stage} completed after {step_index + 1} steps."""
                 
                 # Create typed response for the context
-                from tarsy.models.unified_interactions import LLMResponse, LLMChoice, LLMMessage as TypedLLMMessage
+                from tarsy.models.unified_interactions import LLMChoice, LLMResponse
+                from tarsy.models.unified_interactions import (
+                    LLMMessage as TypedLLMMessage,
+                )
                 typed_response = LLMResponse(
                     choices=[
                         LLMChoice(
@@ -953,11 +957,10 @@ Action Input: {step['action_input']}"""
         print(f"📅 Total interaction events across all stages: {total_timeline_events}")
         
         # VALIDATION 8: Verify alert data in session detail matches our submission
-        session_alert_data = detail_data.get("alert_data", {})
-        if session_alert_data:
-            stored_alert_type = session_alert_data.get("alert_type")
-            assert stored_alert_type == expected_alert_type, f"Stored alert type mismatch: expected {expected_alert_type}, got {stored_alert_type}"
-            print("✅ Session detail alert data matches submission")
+        # alert_type is a top-level field in DetailedSession; alert_data only contains the original nested payload
+        stored_alert_type = detail_data.get("alert_type")
+        assert stored_alert_type == expected_alert_type, f"Stored alert type mismatch: expected {expected_alert_type}, got {stored_alert_type}"
+        print("✅ Session detail alert type matches submission")
         
         # VALIDATION 9 - Summary data is now embedded in DetailedSession, validate via summary endpoint
         print("🔍 Validating session summary statistics via dedicated endpoint...")
@@ -1282,6 +1285,36 @@ Action Input: {step['action_input']}"""
                     pytest.fail("Session was not created within timeout")
                     
                 print(f"✅ Processing completed with session: {session_id}")
+                
+                # CRITICAL FIX: Wait for all async hook operations to complete
+                # This prevents race condition where test validation runs before
+                # async hooks finish storing interactions to database
+                print("\n⏱️  STEP 2.1: Ensuring all async operations complete...")
+                await asyncio.sleep(1.0)  # Give async hooks time to complete
+                
+                # Additional synchronization: Check database until interactions appear
+                # This handles cases where async operations take longer than expected
+                interactions_found = False
+                max_retries = 30  # 3 seconds max wait
+                for retry in range(max_retries):
+                    try:
+                        sessions_response = e2e_test_client.get("/api/v1/history/sessions")
+                        if sessions_response.status_code == 200:
+                            sessions_data = sessions_response.json()
+                            if sessions_data.get("sessions"):
+                                session = sessions_data["sessions"][0]
+                                total_interactions = session.get("llm_interaction_count", 0) + session.get("mcp_communication_count", 0)
+                                if total_interactions > 0:
+                                    interactions_found = True
+                                    print(f"   ✅ Found {total_interactions} interactions after {retry * 0.1:.1f}s")
+                                    break
+                    except Exception as e:
+                        print(f"   🔍 Retry {retry}: {e}")
+                    
+                    await asyncio.sleep(0.1)  # Small delay between checks
+                
+                if not interactions_found:
+                    print("   ⚠️  No interactions found after synchronization - this may indicate a deeper issue")
                 
                 # Step 3: Validate Sessions API endpoints
                 print("\n🔍 STEP 3: Validating Sessions API endpoints...")
