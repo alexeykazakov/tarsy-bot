@@ -155,26 +155,31 @@ class AgentFactory:
         # Create agent using existing create_agent method with session-scoped client
         agent = self.create_agent(agent_identifier, mcp_client)
         
-        # Override strategy if provided
-        if iteration_strategy:
+        # Override strategy if provided (only for BaseAgent subclasses)
+        if iteration_strategy and hasattr(agent, 'set_iteration_strategy'):
             try:
                 strategy_enum = IterationStrategy(iteration_strategy)
                 agent.set_iteration_strategy(strategy_enum)
             except ValueError:
                 logger.warning(f"Invalid iteration strategy '{iteration_strategy}', using agent default")
+        elif iteration_strategy and not hasattr(agent, 'set_iteration_strategy'):
+            logger.debug(f"Agent '{agent_identifier}' does not support iteration strategy override (non-BaseAgent)")
         
         return agent
     
     def _create_traditional_agent(self, agent_class_name: str, mcp_client: MCPClient) -> BaseAgent:
         """
-        Create a traditional BaseAgent subclass instance.
+        Create a traditional BaseAgent subclass instance or other agent type.
+        
+        Supports both BaseAgent subclasses (with iteration_strategy) and
+        alternative agent implementations like LangChainV1Agent.
         
         Args:
             agent_class_name: Name of the agent class to instantiate
             mcp_client: Session-scoped MCP client for this agent instance
             
         Returns:
-            Instantiated traditional agent
+            Instantiated agent (BaseAgent or compatible agent)
             
         Raises:
             ValueError: If agent creation fails
@@ -185,27 +190,37 @@ class AgentFactory:
             # Validate dependencies before creation
             self._validate_dependencies_for_traditional_agent(agent_class_name)
             
-            # Get iteration strategy from built-in configuration
-            agent_config = get_builtin_agent_config(agent_class_name)
-            strategy_value = agent_config.get("iteration_strategy", IterationStrategy.REACT)
-            # Convert string from builtin config to IterationStrategy enum and validate
-            try:
-                iteration_strategy = IterationStrategy(strategy_value)
-            except ValueError:
-                allowed = ", ".join([s.value for s in IterationStrategy])
-                raise ValueError(
-                    f"Invalid iteration strategy '{strategy_value}' for built-in agent '{agent_class_name}'. "
-                    f"Allowed values: {allowed}"
+            # Check if agent inherits from BaseAgent
+            if issubclass(agent_class, BaseAgent):
+                # Traditional BaseAgent - needs iteration_strategy
+                agent_config = get_builtin_agent_config(agent_class_name)
+                strategy_value = agent_config.get("iteration_strategy", IterationStrategy.REACT)
+                # Convert string from builtin config to IterationStrategy enum and validate
+                try:
+                    iteration_strategy = IterationStrategy(strategy_value)
+                except ValueError:
+                    allowed = ", ".join([s.value for s in IterationStrategy])
+                    raise ValueError(
+                        f"Invalid iteration strategy '{strategy_value}' for built-in agent '{agent_class_name}'. "
+                        f"Allowed values: {allowed}"
+                    )
+                
+                agent = agent_class(
+                    llm_client=self.llm_client,
+                    mcp_client=mcp_client,
+                    mcp_registry=self.mcp_registry,
+                    iteration_strategy=iteration_strategy
+                )
+            else:
+                # Non-BaseAgent (e.g., LangChainV1Agent) - no iteration_strategy
+                logger.info(f"Creating non-BaseAgent agent: {agent_class_name}")
+                agent = agent_class(
+                    llm_client=self.llm_client,
+                    mcp_client=mcp_client,
+                    mcp_registry=self.mcp_registry
                 )
             
-            agent = agent_class(
-                llm_client=self.llm_client,
-                mcp_client=mcp_client,
-                mcp_registry=self.mcp_registry,
-                iteration_strategy=iteration_strategy
-            )
-            
-            logger.info(f"Created traditional agent instance: {agent_class_name}")
+            logger.info(f"Created agent instance: {agent_class_name}")
             return agent
             
         except TypeError as e:

@@ -21,6 +21,7 @@ dependencies = [
     "langchain-google-vertexai>=3.0.0",
     "langchain-xai>=1.0.0",
     "langchain-anthropic>=1.0.0",
+    "langchain-mcp-adapters>=0.1.0",
     "python-multipart>=0.0.6",
     "mcp>=1.14.0",
     "sqlmodel>=0.0.14",

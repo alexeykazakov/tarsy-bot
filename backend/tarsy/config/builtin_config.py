@@ -34,6 +34,10 @@ BUILTIN_AGENTS: Dict[str, Dict[str, Any]] = {
         "iteration_strategy": "react",  # ReAct strategy for complex k8s troubleshooting
         "description": "Kubernetes-specialized agent using ReAct pattern for systematic analysis",
     },
+    "LangChainV1Agent": {
+        "import": "tarsy.agents.langchain_v1_agent.LangChainV1Agent",
+        "description": "PoC agent using LangChain v1.0 create_agent (no iteration_strategy - uses LangChain's built-in ReAct)",
+    },
     # Future agents will be added here:
     # "ArgoCDAgent": {
     #     "import": "tarsy.agents.argocd_agent.ArgoCDAgent",
@@ -57,6 +61,15 @@ BUILTIN_CHAIN_DEFINITIONS: Dict[str, Dict[str, Any]] = {
             {"name": "analysis", "agent": "KubernetesAgent"}
         ],
         "description": "Single-stage Kubernetes analysis"
+    },
+    
+    # LangChain v1.0 PoC chain
+    "langchain-v1-kubernetes-chain": {
+        "alert_types": ["kubernetes-langchainv1"],
+        "stages": [
+            {"name": "analysis", "agent": "LangChainV1Agent"}
+        ],
+        "description": "PoC Kubernetes analysis using LangChain v1.0 create_agent"
     },
     
     # Example multi-agent chain (future capability)
