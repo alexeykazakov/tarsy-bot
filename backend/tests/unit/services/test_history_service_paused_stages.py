@@ -1,5 +1,5 @@
 """
-Unit tests for HistoryService paused stages methods.
+Unit tests for SessionDataService paused stages methods.
 
 Tests get_paused_stages() and cancel_all_paused_stages() methods.
 """
@@ -10,7 +10,7 @@ import pytest
 
 from tarsy.models.constants import StageStatus
 from tarsy.models.db_models import StageExecution
-from tarsy.services.history_service import HistoryService
+from tarsy.services.session_data import SessionDataService
 from tarsy.utils.timestamp import now_us
 
 
@@ -42,7 +42,7 @@ def create_mock_stage_execution(
 
 @pytest.mark.unit
 class TestGetPausedStages:
-    """Test suite for HistoryService.get_paused_stages()."""
+    """Test suite for SessionDataService.get_paused_stages()."""
 
     @pytest.fixture
     def mock_settings(self, isolated_test_settings):
@@ -51,16 +51,16 @@ class TestGetPausedStages:
 
     @pytest.fixture
     def history_service(self, mock_settings):
-        """Create HistoryService instance with mocked dependencies."""
-        with patch('tarsy.services.history_service.get_settings', return_value=mock_settings):
-            service = HistoryService()
+        """Create SessionDataService instance with mocked dependencies."""
+        with patch('tarsy.services.session_data.base_infrastructure.get_settings', return_value=mock_settings):
+            service = SessionDataService()
             service._initialization_attempted = True
             service._is_healthy = True
             return service
 
     @pytest.mark.asyncio
     async def test_get_paused_stages_returns_only_paused(
-        self, history_service: HistoryService
+        self, history_service: SessionDataService
     ) -> None:
         """Test that get_paused_stages returns only stages with PAUSED status."""
         session_id = "test-session-123"
@@ -97,7 +97,7 @@ class TestGetPausedStages:
 
     @pytest.mark.asyncio
     async def test_get_paused_stages_returns_empty_when_none_paused(
-        self, history_service: HistoryService
+        self, history_service: SessionDataService
     ) -> None:
         """Test that get_paused_stages returns empty list when no paused stages."""
         session_id = "test-session-123"
@@ -125,7 +125,7 @@ class TestGetPausedStages:
 
     @pytest.mark.asyncio
     async def test_get_paused_stages_returns_multiple_paused(
-        self, history_service: HistoryService
+        self, history_service: SessionDataService
     ) -> None:
         """Test that get_paused_stages returns all paused stages."""
         session_id = "test-session-123"
@@ -158,7 +158,7 @@ class TestGetPausedStages:
 
     @pytest.mark.asyncio
     async def test_get_paused_stages_includes_paused_parallel_children(
-        self, history_service: HistoryService
+        self, history_service: SessionDataService
     ) -> None:
         """Test that get_paused_stages includes paused parallel child stages."""
         session_id = "test-session-123"
@@ -213,7 +213,7 @@ class TestGetPausedStages:
 
     @pytest.mark.asyncio
     async def test_get_paused_stages_with_all_parallel_children_paused(
-        self, history_service: HistoryService
+        self, history_service: SessionDataService
     ) -> None:
         """Test that get_paused_stages returns all paused parallel children."""
         session_id = "test-session-123"
@@ -258,7 +258,7 @@ class TestGetPausedStages:
 
 @pytest.mark.unit
 class TestCancelAllPausedStages:
-    """Test suite for HistoryService.cancel_all_paused_stages()."""
+    """Test suite for SessionDataService.cancel_all_paused_stages()."""
 
     @pytest.fixture
     def mock_settings(self, isolated_test_settings):
@@ -267,16 +267,16 @@ class TestCancelAllPausedStages:
 
     @pytest.fixture
     def history_service(self, mock_settings):
-        """Create HistoryService instance with mocked dependencies."""
-        with patch('tarsy.services.history_service.get_settings', return_value=mock_settings):
-            service = HistoryService()
+        """Create SessionDataService instance with mocked dependencies."""
+        with patch('tarsy.services.session_data.base_infrastructure.get_settings', return_value=mock_settings):
+            service = SessionDataService()
             service._initialization_attempted = True
             service._is_healthy = True
             return service
 
     @pytest.mark.asyncio
     async def test_cancel_all_paused_stages_updates_status_to_cancelled(
-        self, history_service: HistoryService
+        self, history_service: SessionDataService
     ) -> None:
         """Test that cancel_all_paused_stages updates status to CANCELLED."""
         session_id = "test-session-123"
@@ -300,7 +300,7 @@ class TestCancelAllPausedStages:
 
     @pytest.mark.asyncio
     async def test_cancel_all_paused_stages_uses_paused_at_us_for_completed_at(
-        self, history_service: HistoryService
+        self, history_service: SessionDataService
     ) -> None:
         """Test that cancel_all_paused_stages uses paused_at_us as completed_at_us."""
         session_id = "test-session-123"
@@ -322,7 +322,7 @@ class TestCancelAllPausedStages:
 
     @pytest.mark.asyncio
     async def test_cancel_all_paused_stages_calculates_duration(
-        self, history_service: HistoryService
+        self, history_service: SessionDataService
     ) -> None:
         """Test that cancel_all_paused_stages calculates duration correctly."""
         session_id = "test-session-123"
@@ -347,7 +347,7 @@ class TestCancelAllPausedStages:
 
     @pytest.mark.asyncio
     async def test_cancel_all_paused_stages_returns_count(
-        self, history_service: HistoryService
+        self, history_service: SessionDataService
     ) -> None:
         """Test that cancel_all_paused_stages returns correct count."""
         session_id = "test-session-123"
@@ -371,7 +371,7 @@ class TestCancelAllPausedStages:
 
     @pytest.mark.asyncio
     async def test_cancel_all_paused_stages_returns_zero_when_no_paused(
-        self, history_service: HistoryService
+        self, history_service: SessionDataService
     ) -> None:
         """Test that cancel_all_paused_stages returns 0 when no paused stages."""
         session_id = "test-session-123"
@@ -386,7 +386,7 @@ class TestCancelAllPausedStages:
 
     @pytest.mark.asyncio
     async def test_cancel_all_paused_stages_fallback_when_paused_at_us_is_none(
-        self, history_service: HistoryService
+        self, history_service: SessionDataService
     ) -> None:
         """Test that cancel_all_paused_stages uses current time when paused_at_us is None."""
         session_id = "test-session-123"

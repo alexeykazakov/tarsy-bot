@@ -14,12 +14,12 @@ from tarsy.config.settings import Settings
 from tarsy.models.constants import AlertSessionStatus
 from tarsy.models.db_models import AlertSession
 from tarsy.models.unified_interactions import LLMConversation, LLMMessage, MessageRole
-from tarsy.services.history_service import HistoryService, get_history_service
+from tarsy.services.session_data import SessionDataService, get_session_data_service
 from tests.utils import MockFactory, SessionFactory
 
 
-class TestHistoryService:
-    """Test suite for HistoryService class."""
+class TestSessionDataService:
+    """Test suite for SessionDataService class."""
     
     @pytest.fixture
     def mock_settings(self, isolated_test_settings):
@@ -28,9 +28,9 @@ class TestHistoryService:
     
     @pytest.fixture
     def history_service(self, mock_settings):
-        """Create HistoryService instance with mocked dependencies."""
-        with patch('tarsy.services.history_service.get_settings', return_value=mock_settings):
-            service = HistoryService()
+        """Create SessionDataService instance with mocked dependencies."""
+        with patch('tarsy.services.session_data.base_infrastructure.get_settings', return_value=mock_settings):
+            service = SessionDataService()
             service._initialization_attempted = True
             service._is_healthy = True
             return service
@@ -43,8 +43,8 @@ class TestHistoryService:
             database_url=expected_url
         )
         
-        with patch('tarsy.services.history_service.get_settings', return_value=mock_settings):
-            service = HistoryService()
+        with patch('tarsy.services.session_data.base_infrastructure.get_settings', return_value=mock_settings):
+            service = SessionDataService()
             assert service.settings.database_url == expected_url
     
     @pytest.mark.parametrize("failure_type,expected_result,expected_attempted,expected_healthy", [
@@ -53,7 +53,7 @@ class TestHistoryService:
         ("schema_failure", False, True, False),  # Schema creation failure
     ])
     @pytest.mark.unit
-    @patch('tarsy.services.history_service.DatabaseManager')
+    @patch('tarsy.services.session_data.base_infrastructure.DatabaseManager')
     def test_initialize_scenarios(self, mock_db_manager_class, failure_type, expected_result, expected_attempted, expected_healthy):
         """Test service initialization for various failure scenarios."""
         # Create mock settings based on scenario
@@ -73,8 +73,8 @@ class TestHistoryService:
             mock_db_instance.create_tables.side_effect = Exception("Schema creation failed")
             mock_db_manager_class.return_value = mock_db_instance
         
-        with patch('tarsy.services.history_service.get_settings', return_value=mock_settings):
-            service = HistoryService()
+        with patch('tarsy.services.session_data.base_infrastructure.get_settings', return_value=mock_settings):
+            service = SessionDataService()
             result = service.initialize()
             
             assert result == expected_result
@@ -90,7 +90,7 @@ class TestHistoryService:
         (False, None),  # Service disabled
     ])
     @pytest.mark.unit
-    @patch('tarsy.services.history_service.HistoryRepository')
+    @patch('tarsy.services.session_data.base_infrastructure.HistoryRepository')
     def test_get_repository_scenarios(self, mock_repo_class, history_service, service_enabled, expected_repo):
         """Test repository access for various scenarios."""
         dependencies = MockFactory.create_mock_history_service_dependencies()
@@ -673,43 +673,43 @@ class TestHistoryService:
         else:  # non_retryable
             mock_sleep.assert_not_called()  # Should not retry for non-retryable errors
 
-class TestHistoryServiceGlobalInstance:
+class TestSessionDataServiceGlobalInstance:
     """Test suite for global history service instance management."""
     
     @pytest.mark.unit
-    @patch('tarsy.services.history_service._history_service', None)
-    def test_get_history_service_singleton(self):
-        """Test that get_history_service returns a singleton instance."""
-        with patch('tarsy.services.history_service.HistoryService') as mock_service_class:
+    @patch('tarsy.services.session_data.base_infrastructure._history_service', None)
+    def test_get_session_data_service_singleton(self):
+        """Test that get_session_data_service returns a singleton instance."""
+        with patch('tarsy.services.session_data.base_infrastructure.SessionDataService') as mock_service_class:
             mock_instance = Mock()
             mock_service_class.return_value = mock_instance
             
             # First call should create instance
-            service1 = get_history_service()
+            service1 = get_session_data_service()
             
             # Second call should return same instance
-            service2 = get_history_service()
+            service2 = get_session_data_service()
             
             assert service1 == service2
             mock_service_class.assert_called_once()
     
     @pytest.mark.unit
-    @patch('tarsy.services.history_service._history_service', None)
-    def test_get_history_service_initialization(self):
-        """Test that get_history_service initializes the service."""
-        with patch('tarsy.services.history_service.HistoryService') as mock_service_class:
+    @patch('tarsy.services.session_data.base_infrastructure._history_service', None)
+    def test_get_session_data_service_initialization(self):
+        """Test that get_session_data_service initializes the service."""
+        with patch('tarsy.services.session_data.base_infrastructure.SessionDataService') as mock_service_class:
             mock_instance = Mock()
             mock_service_class.return_value = mock_instance
             
-            service = get_history_service()
+            service = get_session_data_service()
             
             assert service == mock_instance
             mock_instance.initialize.assert_called_once()
 
 
 @pytest.mark.unit
-class TestHistoryServiceStageExecution:
-    """Test suite for HistoryService stage execution methods - covers bug fixes."""
+class TestSessionDataServiceStageExecution:
+    """Test suite for SessionDataService stage execution methods - covers bug fixes."""
     
     @pytest.fixture
     def sample_stage_execution(self):
@@ -729,7 +729,7 @@ class TestHistoryServiceStageExecution:
     @pytest.mark.asyncio
     async def test_create_stage_execution_no_repository_raises_error(self, sample_stage_execution):
         """Test that RuntimeError is raised when repository is unavailable - covers bug fix."""
-        service = HistoryService()
+        service = SessionDataService()
         
         # Mock get_repository to return None (repository unavailable)
         with patch.object(service, 'get_repository') as mock_get_repo:
@@ -743,7 +743,7 @@ class TestHistoryServiceStageExecution:
     @pytest.mark.asyncio
     async def test_create_stage_execution_database_failure_raises_error(self, sample_stage_execution):
         """Test that database failures cause RuntimeError instead of fallback - covers bug fix."""
-        service = HistoryService()
+        service = SessionDataService()
         
         # Mock the retry mechanism to return None (simulating all retries failed)
         with patch.object(service, '_retry_database_operation_async', return_value=None):
@@ -754,7 +754,7 @@ class TestHistoryServiceStageExecution:
     @pytest.mark.asyncio
     async def test_create_stage_execution_success_returns_id(self, sample_stage_execution):
         """Test successful stage execution creation returns the ID."""
-        service = HistoryService()
+        service = SessionDataService()
         
         # Mock successful repository operation
         with patch.object(service, '_retry_database_operation_async', return_value="stage-exec-123"):
@@ -764,7 +764,7 @@ class TestHistoryServiceStageExecution:
     @pytest.mark.asyncio
     async def test_update_stage_execution_success(self, sample_stage_execution):
         """Test successful stage execution update."""
-        service = HistoryService()
+        service = SessionDataService()
         
         # Update stage execution status
         from tarsy.models.constants import StageStatus
@@ -786,7 +786,7 @@ class TestHistoryServiceStageExecution:
     @pytest.mark.asyncio
     async def test_update_stage_execution_failure(self, sample_stage_execution):
         """Test stage execution update failure."""
-        service = HistoryService()
+        service = SessionDataService()
         
         # Mock failed repository operation
         with patch.object(service, '_retry_database_operation_async', return_value=None):
@@ -796,7 +796,7 @@ class TestHistoryServiceStageExecution:
     @pytest.mark.asyncio
     async def test_update_stage_execution_no_repository(self, sample_stage_execution):
         """Test stage execution update when repository is unavailable."""
-        service = HistoryService()
+        service = SessionDataService()
         
         # Mock get_repository to return None (repository unavailable)
         def mock_operation():
@@ -821,7 +821,7 @@ class TestHistoryServiceStageExecution:
     @pytest.mark.asyncio
     async def test_update_session_current_stage_success(self):
         """Test successful session current stage update."""
-        service = HistoryService()
+        service = SessionDataService()
         
         # Mock successful repository operation
         with patch.object(service, '_retry_database_operation_async', return_value=True):
@@ -840,7 +840,7 @@ class TestHistoryServiceStageExecution:
     @pytest.mark.asyncio
     async def test_update_session_current_stage_failure(self):
         """Test session current stage update failure."""
-        service = HistoryService()
+        service = SessionDataService()
         
         # Mock failed repository operation
         with patch.object(service, '_retry_database_operation_async', return_value=None):
@@ -854,7 +854,7 @@ class TestHistoryServiceStageExecution:
     @pytest.mark.asyncio
     async def test_update_session_current_stage_no_repository(self):
         """Test session current stage update when repository is unavailable."""
-        service = HistoryService()
+        service = SessionDataService()
         
         # Mock get_repository to return None (repository unavailable)
         with patch.object(service, 'get_repository') as mock_get_repo:
@@ -872,7 +872,7 @@ class TestHistoryServiceStageExecution:
     @pytest.mark.asyncio
     async def test_get_stage_execution_success(self, sample_stage_execution):
         """Test successful stage execution retrieval."""
-        service = HistoryService()
+        service = SessionDataService()
         
         # Mock successful repository operation
         with patch.object(service, '_retry_database_operation_async', return_value=sample_stage_execution):
@@ -891,7 +891,7 @@ class TestHistoryServiceStageExecution:
     @pytest.mark.asyncio
     async def test_get_stage_execution_not_found(self):
         """Test stage execution retrieval when execution doesn't exist."""
-        service = HistoryService()
+        service = SessionDataService()
         
         # Mock repository returning None (execution not found)
         with patch.object(service, '_retry_database_operation_async', return_value=None):
@@ -908,7 +908,7 @@ class TestHistoryServiceStageExecution:
     @pytest.mark.asyncio
     async def test_get_stage_execution_no_repository(self):
         """Test stage execution retrieval when repository is unavailable."""
-        service = HistoryService()
+        service = SessionDataService()
         
         # Mock get_repository to return None (repository unavailable)
         with patch.object(service, 'get_repository') as mock_get_repo:
@@ -920,18 +920,18 @@ class TestHistoryServiceStageExecution:
                 assert result is None
 
 
-class TestHistoryServiceErrorHandling:
-    """Test suite for HistoryService error handling scenarios."""
+class TestSessionDataServiceErrorHandling:
+    """Test suite for SessionDataService error handling scenarios."""
     
     @pytest.fixture
     def history_service_with_errors(self):
-        """Create HistoryService that simulates various error conditions."""
+        """Create SessionDataService that simulates various error conditions."""
         mock_settings = Mock(spec=Settings)
         mock_settings.database_url = "sqlite:///test_history.db"
         mock_settings.history_retention_days = 90
         
-        with patch('tarsy.services.history_service.get_settings', return_value=mock_settings):
-            service = HistoryService()
+        with patch('tarsy.services.session_data.base_infrastructure.get_settings', return_value=mock_settings):
+            service = SessionDataService()
             service._initialization_attempted = True
             service._is_healthy = False  # Simulate unhealthy state
             return service
@@ -1075,7 +1075,7 @@ class TestHistoryServiceErrorHandling:
 
 
 class TestDashboardMethods:
-    """Test suite for new dashboard-specific methods in HistoryService."""
+    """Test suite for new dashboard-specific methods in SessionDataService."""
     
 
     
@@ -1085,7 +1085,7 @@ class TestDashboardMethods:
     @pytest.mark.unit
     def test_get_filter_options_scenarios(self, scenario, expected_agent_types, expected_alert_types):
         """Test filter options retrieval for various scenarios."""
-        service = HistoryService()
+        service = SessionDataService()
         
         if scenario == "success":
             service._is_healthy = True
@@ -1106,7 +1106,7 @@ class TestDashboardMethods:
     @pytest.mark.unit
     def test_get_filter_options_no_repository_raises_runtime_error(self):
         """Test that RuntimeError is raised when repository is unavailable."""
-        service = HistoryService()
+        service = SessionDataService()
         service._is_healthy = False
         
         with patch.object(service, 'get_repository') as mock_get_repo:
@@ -1117,17 +1117,17 @@ class TestDashboardMethods:
                 service.get_filter_options()
 
 @pytest.mark.unit
-class TestHistoryServiceRetryLogicDuplicatePrevention:
-    """Test HistoryService retry logic improvements for duplicate prevention."""
+class TestSessionDataServiceRetryLogicDuplicatePrevention:
+    """Test SessionDataService retry logic improvements for duplicate prevention."""
     
     @pytest.fixture
     def history_service(self):
-        """Create HistoryService instance for testing."""
-        with patch('tarsy.services.history_service.get_settings') as mock_settings:
+        """Create SessionDataService instance for testing."""
+        with patch('tarsy.services.session_data.base_infrastructure.get_settings') as mock_settings:
             mock_settings.return_value.database_url = "sqlite:///test.db"
             mock_settings.return_value.history_retention_days = 90
             
-            service = HistoryService()
+            service = SessionDataService()
             return service
     
     def test_retry_operation_success_on_first_attempt(self, history_service):
@@ -1409,7 +1409,7 @@ class TestHistoryServiceRetryLogicDuplicatePrevention:
 @pytest.mark.unit
 async def test_cleanup_orphaned_sessions():
     """Test cleanup of orphaned sessions based on timeout."""
-    history_service = HistoryService()
+    history_service = SessionDataService()
     
     from tarsy.models.constants import AlertSessionStatus
     
@@ -1475,7 +1475,7 @@ async def test_cleanup_orphaned_sessions():
 @pytest.mark.unit
 async def test_cleanup_orphaned_sessions_no_repository():
     """Test cleanup handles gracefully when repository is unavailable."""
-    history_service = HistoryService()
+    history_service = SessionDataService()
     history_service.get_repository = Mock(return_value=Mock(__enter__=Mock(return_value=None), __exit__=Mock(return_value=None)))
     
     cleaned_count = history_service.cleanup_orphaned_sessions()
@@ -1487,7 +1487,7 @@ async def test_cleanup_orphaned_sessions_no_repository():
 @pytest.mark.unit
 async def test_cleanup_orphaned_sessions_no_active_sessions():
     """Test cleanup when there are no orphaned sessions."""
-    history_service = HistoryService()
+    history_service = SessionDataService()
     
     mock_repo = Mock()
     mock_repo.find_orphaned_sessions.return_value = []  # No orphaned sessions found
@@ -1515,7 +1515,7 @@ async def test_cleanup_never_touches_failed_sessions():
     This test prevents a critical bug where failed sessions could be incorrectly
     cleaned up by the orphan detection mechanism.
     """
-    history_service = HistoryService()
+    history_service = SessionDataService()
     
     from tarsy.models.constants import AlertSessionStatus
     
@@ -1558,7 +1558,7 @@ async def test_cleanup_never_touches_completed_sessions():
     
     Completed sessions should never be touched by orphan detection.
     """
-    history_service = HistoryService()
+    history_service = SessionDataService()
     
     from tarsy.models.constants import AlertSessionStatus
     
@@ -1600,7 +1600,7 @@ async def test_cleanup_never_touches_null_last_interaction():
     Sessions where last_interaction_at is NULL (not yet set) should not be
     considered orphaned, even if they're IN_PROGRESS.
     """
-    history_service = HistoryService()
+    history_service = SessionDataService()
     
     from tarsy.models.constants import AlertSessionStatus
     
@@ -1640,7 +1640,7 @@ async def test_cleanup_only_touches_in_progress_with_old_interaction():
     
     This is the positive test case for the orphan detection mechanism.
     """
-    history_service = HistoryService()
+    history_service = SessionDataService()
     
     from tarsy.models.constants import AlertSessionStatus
     from tarsy.utils.timestamp import now_us
@@ -1683,7 +1683,7 @@ async def test_cleanup_only_touches_in_progress_with_old_interaction():
 @pytest.mark.unit
 async def test_cleanup_orphaned_sessions_session_not_found():
     """Test cleanup handles gracefully when update fails."""
-    history_service = HistoryService()
+    history_service = SessionDataService()
     
     
     # Create an orphaned session
@@ -1722,9 +1722,9 @@ class TestHistoryAPIResponseStructure:
     
     @pytest.fixture
     def history_service(self, isolated_test_settings):
-        """Create HistoryService instance for testing."""
-        with patch('tarsy.services.history_service.get_settings', return_value=isolated_test_settings):
-            service = HistoryService()
+        """Create SessionDataService instance for testing."""
+        with patch('tarsy.services.session_data.base_infrastructure.get_settings', return_value=isolated_test_settings):
+            service = SessionDataService()
             service._initialization_attempted = True
             service._is_healthy = True
             return service
@@ -1902,14 +1902,14 @@ class TestHistoryAPIResponseStructure:
 
 
 @pytest.mark.unit
-class TestHistoryServiceTokenAggregations:
-    """Test token usage aggregation functionality in HistoryService added in EP-0009."""
+class TestSessionDataServiceTokenAggregations:
+    """Test token usage aggregation functionality in SessionDataService added in EP-0009."""
     
     @pytest.fixture
     def history_service(self, isolated_test_settings):
-        """Create HistoryService instance for testing."""
-        with patch('tarsy.services.history_service.get_settings', return_value=isolated_test_settings):
-            service = HistoryService()
+        """Create SessionDataService instance for testing."""
+        with patch('tarsy.services.session_data.base_infrastructure.get_settings', return_value=isolated_test_settings):
+            service = SessionDataService()
             service._initialization_attempted = True
             service._is_healthy = True
             return service
@@ -2117,9 +2117,9 @@ class TestConversationHistory:
     
     @pytest.fixture
     def history_service(self, mock_settings):
-        """Create HistoryService instance with mocked dependencies."""
-        with patch('tarsy.services.history_service.get_settings', return_value=mock_settings):
-            service = HistoryService()
+        """Create SessionDataService instance with mocked dependencies."""
+        with patch('tarsy.services.session_data.base_infrastructure.get_settings', return_value=mock_settings):
+            service = SessionDataService()
             service._initialization_attempted = True
             service._is_healthy = True
             return service

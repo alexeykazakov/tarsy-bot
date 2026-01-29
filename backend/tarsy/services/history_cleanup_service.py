@@ -197,13 +197,13 @@ class HistoryCleanupService:
         Returns:
             Number of sessions marked as failed
         """
-        from tarsy.services.history_service import get_history_service
+        from tarsy.services.session_data import get_session_data_service
         
         # Get history service instance
-        history_service = get_history_service()
+        session_data_service = get_session_data_service()
         
         # Call the existing cleanup_orphaned_sessions method
-        return history_service.cleanup_orphaned_sessions(self.orphaned_timeout_minutes)
+        return session_data_service.cleanup_orphaned_sessions(self.orphaned_timeout_minutes)
     
     async def _cleanup_orphaned_chats(self) -> int:
         """
@@ -237,13 +237,13 @@ class HistoryCleanupService:
         Returns:
             Number of chats cleaned up
         """
-        from tarsy.services.history_service import get_history_service
+        from tarsy.services.session_data import get_session_data_service
         
         # Get history service instance
-        history_service = get_history_service()
+        session_data_service = get_session_data_service()
         
         # Call the cleanup_orphaned_chats method
-        return history_service.cleanup_orphaned_chats(self.orphaned_timeout_minutes)
+        return session_data_service.cleanup_orphaned_chats(self.orphaned_timeout_minutes)
     
     def _should_run_retention_cleanup(self) -> bool:
         """

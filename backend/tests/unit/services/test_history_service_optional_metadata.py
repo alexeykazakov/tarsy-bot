@@ -1,7 +1,7 @@
 """
 Unit tests for optional metadata fields in History Service.
 
-Tests that HistoryService correctly saves and retrieves optional metadata
+Tests that SessionDataService correctly saves and retrieves optional metadata
 (author, runbook_url) when creating alert sessions.
 """
 
@@ -14,12 +14,12 @@ from tarsy.models.alert import Alert, ProcessingAlert
 from tarsy.models.constants import AlertSessionStatus
 from tarsy.models.db_models import AlertSession
 from tarsy.models.processing_context import ChainContext
-from tarsy.services.history_service import HistoryService
+from tarsy.services.session_data import SessionDataService
 
 
 @pytest.mark.unit
-class TestHistoryServiceOptionalMetadata:
-    """Test optional metadata fields (author, runbook_url) handling in HistoryService."""
+class TestSessionDataServiceOptionalMetadata:
+    """Test optional metadata fields (author, runbook_url) handling in SessionDataService."""
 
     @pytest.fixture
     def mock_settings(self, isolated_test_settings):
@@ -28,9 +28,9 @@ class TestHistoryServiceOptionalMetadata:
 
     @pytest.fixture
     def history_service(self, mock_settings):
-        """Create HistoryService instance with mocked dependencies."""
-        with patch('tarsy.services.history_service.get_settings', return_value=mock_settings):
-            service = HistoryService()
+        """Create SessionDataService instance with mocked dependencies."""
+        with patch('tarsy.services.session_data.base_infrastructure.get_settings', return_value=mock_settings):
+            service = SessionDataService()
             service._initialization_attempted = True
             service._is_healthy = True
             return service

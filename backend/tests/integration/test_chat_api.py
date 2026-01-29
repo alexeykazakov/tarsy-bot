@@ -14,7 +14,7 @@ from tarsy.main import app
 from tarsy.models.constants import AlertSessionStatus
 from tarsy.models.db_models import AlertSession, ChatUserMessage
 from tarsy.services.chat_service import ChatService
-from tarsy.services.history_service import HistoryService
+from tarsy.services.session_data import SessionDataService
 from tarsy.utils.timestamp import now_us
 
 
@@ -23,7 +23,7 @@ class TestChatAPIIntegration:
     """Integration tests for chat API flow."""
 
     @pytest.fixture
-    async def completed_session(self, history_service_with_test_db: HistoryService):
+    async def completed_session(self, history_service_with_test_db: SessionDataService):
         """Create a completed session for testing."""
         history_service = history_service_with_test_db
         session = AlertSession(

@@ -37,8 +37,8 @@ class E2ETestIsolation:
         # CRITICAL: Reset global singletons and caches BEFORE e2e test setup
         # This prevents contamination from other tests that ran in the same pytest session
         with suppress(Exception):
-            import tarsy.services.history_service
-            tarsy.services.history_service._history_service = None
+            import tarsy.services.session_data
+            tarsy.services.session_data._session_data_service = None
             
         # Clear cached settings to ensure environment changes take effect
         with suppress(Exception):
@@ -112,8 +112,8 @@ class E2ETestIsolation:
         
         # 8. CRITICAL: Reset global history service singleton to prevent contamination
         with suppress(Exception):
-            import tarsy.services.history_service
-            tarsy.services.history_service._history_service = None
+            import tarsy.services.session_data
+            tarsy.services.session_data._session_data_service = None
     
     def create_temp_database(self) -> str:
         """Create an isolated temporary database file."""
@@ -257,8 +257,8 @@ def ensure_e2e_isolation(request):
     # CRITICAL: Reset global singletons and caches at the START of each e2e test
     # This ensures e2e tests get fresh instances even when running with other tests
     with suppress(Exception):
-        import tarsy.services.history_service
-        tarsy.services.history_service._history_service = None
+        import tarsy.services.session_data
+        tarsy.services.session_data._session_data_service = None
         
     # Clear cached settings to ensure environment changes take effect
     with suppress(Exception):
@@ -380,8 +380,8 @@ def pytest_runtest_teardown(item):
         
         # CRITICAL: Reset global history service singleton to prevent contamination of other tests
         with suppress(Exception):
-            import tarsy.services.history_service
-            tarsy.services.history_service._history_service = None
+            import tarsy.services.session_data
+            tarsy.services.session_data._session_data_service = None
             
         # Force clear any cached modules that might have been modified
         modules_to_clear = [

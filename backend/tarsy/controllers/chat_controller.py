@@ -20,7 +20,7 @@ from tarsy.models.api_models import (
     ErrorResponse,
 )
 from tarsy.services.chat_service import ChatService, get_chat_service
-from tarsy.services.history_service import HistoryService, get_history_service
+from tarsy.services.session_data import SessionDataService, get_session_data_service
 from tarsy.utils.auth_helpers import extract_author_from_request
 from tarsy.utils.logger import get_logger
 
@@ -62,7 +62,7 @@ async def create_chat(
     request: Request,
     session_id: str = Path(..., description="Session identifier"),
     chat_service: Annotated[ChatService, Depends(get_chat_service)] = None,
-    history_service: Annotated[HistoryService, Depends(get_history_service)] = None,
+    session_data_service: Annotated[SessionDataService, Depends(get_session_data_service)] = None,
 ) -> ChatResponse:
     """Create new chat for terminated session."""
 
@@ -87,7 +87,7 @@ async def create_chat(
         chat = await chat_service.create_chat(session_id, author)
 
         # Get message count
-        message_count = await history_service.get_chat_user_message_count(chat.chat_id)
+        message_count = await session_data_service.get_chat_user_message_count(chat.chat_id)
 
         return ChatResponse(
             chat_id=chat.chat_id,
@@ -146,7 +146,7 @@ async def create_chat(
 )
 async def check_chat_availability(
     session_id: str = Path(..., description="Session identifier"),
-    history_service: Annotated[HistoryService, Depends(get_history_service)] = None,
+    session_data_service: Annotated[SessionDataService, Depends(get_session_data_service)] = None,
 ) -> ChatAvailabilityResponse:
     """
     Check if chat is available for session (lightweight pre-check).
@@ -157,14 +157,14 @@ async def check_chat_availability(
 
     try:
         # Check if session exists (get_session is synchronous, wrap in to_thread)
-        session = await asyncio.to_thread(history_service.get_session, session_id)
+        session = await asyncio.to_thread(session_data_service.get_session, session_id)
         if not session:
             raise HTTPException(
                 status_code=404, detail=f"Session {session_id} not found"
             )
 
         # Check if chat already exists
-        existing_chat = await history_service.get_chat_by_session(session_id)
+        existing_chat = await session_data_service.get_chat_by_session(session_id)
         if existing_chat:
             return ChatAvailabilityResponse(
                 available=True, chat_id=existing_chat.chat_id
@@ -182,7 +182,7 @@ async def check_chat_availability(
 
         # Check if session has any LLM interactions (needed for chat context)
         # Sessions cancelled before processing won't have any interactions
-        has_interactions = await history_service.has_llm_interactions(session_id)
+        has_interactions = await session_data_service.has_llm_interactions(session_id)
         if not has_interactions:
             return ChatAvailabilityResponse(
                 available=False,
@@ -225,17 +225,17 @@ async def check_chat_availability(
 )
 async def get_chat(
     chat_id: str = Path(..., description="Chat identifier"),
-    history_service: Annotated[HistoryService, Depends(get_history_service)] = None,
+    session_data_service: Annotated[SessionDataService, Depends(get_session_data_service)] = None,
 ) -> ChatResponse:
     """Get chat details by ID."""
 
     try:
-        chat = await history_service.get_chat_by_id(chat_id)
+        chat = await session_data_service.get_chat_by_id(chat_id)
         if not chat:
             raise HTTPException(status_code=404, detail=f"Chat {chat_id} not found")
 
         # Get message count
-        message_count = await history_service.get_chat_user_message_count(chat_id)
+        message_count = await session_data_service.get_chat_user_message_count(chat_id)
 
         return ChatResponse(
             chat_id=chat.chat_id,
@@ -322,9 +322,9 @@ async def send_message(
         )
 
         # Get chat for session_id (needed for response metadata)
-        from tarsy.services.history_service import get_history_service
-        history_service = get_history_service()
-        chat = await history_service.get_chat_by_id(chat_id)
+        from tarsy.services.session_data import get_session_data_service
+        session_data_service = get_session_data_service()
+        chat = await session_data_service.get_chat_by_id(chat_id)
         if not chat:
             raise HTTPException(status_code=404, detail=f"Chat {chat_id} not found")
 
@@ -462,23 +462,23 @@ async def get_chat_messages(
     chat_id: str = Path(..., description="Chat identifier"),
     limit: int = Query(50, ge=1, le=100, description="Maximum messages to return"),
     offset: int = Query(0, ge=0, description="Pagination offset"),
-    history_service: Annotated[HistoryService, Depends(get_history_service)] = None,
+    session_data_service: Annotated[SessionDataService, Depends(get_session_data_service)] = None,
 ) -> ChatUserMessageListResponse:
     """Get chat message history."""
 
     try:
         # Verify chat exists
-        chat = await history_service.get_chat_by_id(chat_id)
+        chat = await session_data_service.get_chat_by_id(chat_id)
         if not chat:
             raise HTTPException(status_code=404, detail=f"Chat {chat_id} not found")
 
         # Get user messages
-        user_messages = await history_service.get_chat_user_messages(
+        user_messages = await session_data_service.get_chat_user_messages(
             chat_id=chat_id, limit=limit, offset=offset
         )
 
         # Get total count
-        total_count = await history_service.get_chat_user_message_count(chat_id)
+        total_count = await session_data_service.get_chat_user_message_count(chat_id)
 
         # Convert to response format
         message_responses = [

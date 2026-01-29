@@ -54,7 +54,7 @@ class TestAlertServiceInitialization:
             
             assert service.settings == mock_settings
             assert service.runbook_service == mock_runbook.return_value
-            assert service.history_service == mock_history.return_value
+            assert service.session_data_service == mock_history.return_value
             assert service.chain_registry == mock_chain_registry.return_value
             assert service.mcp_server_registry == mock_mcp_registry.return_value
             assert service.health_check_mcp_client == mock_mcp_client.return_value
@@ -337,11 +337,11 @@ class TestAlertProcessing:
         service.agent_factory.get_agent_with_config = Mock()
         
         # Create mock history service for proper testing
-        from tarsy.services.history_service import HistoryService
+        from tarsy.services.session_data import SessionDataService
         from tarsy.models.db_models import StageExecution
         from types import SimpleNamespace
         
-        mock_history_service = Mock(spec=HistoryService)
+        mock_history_service = Mock(spec=SessionDataService)
         mock_history_service.create_session.return_value = True
         mock_history_service.update_session_status = Mock()
         mock_history_service.store_llm_interaction = Mock()
@@ -372,11 +372,11 @@ class TestAlertProcessing:
         mock_history_service.get_stage_execution = AsyncMock(side_effect=create_mock_stage_execution)
         # Mock database verification for stage creation
         mock_history_service._retry_database_operation_async = AsyncMock(return_value=True)
-        service.history_service = mock_history_service
+        service.session_data_service = mock_history_service
         
         # Initialize manager classes
-        service.stage_manager = StageExecutionManager(service.history_service)
-        service.session_manager = SessionManager(service.history_service)
+        service.stage_manager = StageExecutionManager(service.session_data_service)
+        service.session_manager = SessionManager(service.session_data_service)
         
         # Mock parallel executor
         service.parallel_executor = Mock()
@@ -642,9 +642,9 @@ class TestHistorySessionManagement:
              patch('tarsy.services.alert_service.LLMManager'):
             
             service = AlertService(mock_settings)
-            service.history_service = Mock()
+            service.session_data_service = Mock()
             # Create real SessionManager with mocked history service
-            service.session_manager = SessionManager(service.history_service)
+            service.session_manager = SessionManager(service.session_data_service)
             
             yield service
     
@@ -1226,8 +1226,8 @@ class TestEnhancedChainExecution:
         service.history_service._retry_database_operation_async = AsyncMock(return_value=True)
         
         # Initialize manager classes
-        service.stage_manager = StageExecutionManager(service.history_service)
-        service.session_manager = SessionManager(service.history_service)
+        service.stage_manager = StageExecutionManager(service.session_data_service)
+        service.session_manager = SessionManager(service.session_data_service)
         
         # Mock parallel executor
         service.parallel_executor = Mock()
@@ -1584,8 +1584,8 @@ class TestFullErrorPropagation:
         service.history_service._retry_database_operation_async = AsyncMock(return_value=True)
         
         # Initialize manager classes
-        service.stage_manager = StageExecutionManager(service.history_service)
-        service.session_manager = SessionManager(service.history_service)
+        service.stage_manager = StageExecutionManager(service.session_data_service)
+        service.session_manager = SessionManager(service.session_data_service)
         
         # Mock parallel executor
         service.parallel_executor = Mock()
@@ -1802,7 +1802,7 @@ class TestAlertServicePausedWithNoneFinalAnalysis:
             mock_history_instance.start_session_processing = AsyncMock()
             mock_history_instance.record_session_interaction = AsyncMock()
             mock_history.return_value = mock_history_instance
-            service.history_service = mock_history_instance
+            service.session_data_service = mock_history_instance
             
             # Mock session manager
             service.session_manager.create_chain_history_session = Mock(return_value=True)

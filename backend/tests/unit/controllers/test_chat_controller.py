@@ -34,10 +34,10 @@ class TestChatController:
     def client(self, mock_chat_service, mock_history_service):
         """Create test client with dependency overrides."""
         from tarsy.services.chat_service import get_chat_service
-        from tarsy.services.history_service import get_history_service
+        from tarsy.services.session_data import get_session_data_service
         
         app.dependency_overrides[get_chat_service] = lambda: mock_chat_service
-        app.dependency_overrides[get_history_service] = lambda: mock_history_service
+        app.dependency_overrides[get_session_data_service] = lambda: mock_history_service
         
         # Mock the process_chat_message_callback
         app.state.process_chat_message_callback = AsyncMock()
@@ -253,7 +253,7 @@ class TestChatController:
 
     # ===== POST /api/v1/chats/{chat_id}/messages =====
 
-    @patch("tarsy.services.history_service.HistoryService.get_chat_by_id", new_callable=AsyncMock)
+    @patch("tarsy.services.session_data.SessionDataService.get_chat_by_id", new_callable=AsyncMock)
     def test_send_message_success(self, mock_get_chat, client, mock_chat_service, sample_chat):
         """Test successful message send."""
         mock_get_chat.return_value = sample_chat

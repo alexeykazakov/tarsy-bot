@@ -473,7 +473,7 @@ class TestHistoryCleanupServiceDualOperation:
     @pytest.mark.asyncio
     async def test_cleanup_orphaned_sessions_calls_history_service(self, service):
         """Test that _cleanup_orphaned_sessions properly delegates to history service."""
-        with patch("tarsy.services.history_service.get_history_service") as mock_get_history:
+        with patch("tarsy.services.session_data.get_session_data_service") as mock_get_history:
             mock_history_service = Mock()
             mock_history_service.cleanup_orphaned_sessions.return_value = 3
             mock_get_history.return_value = mock_history_service
@@ -493,7 +493,7 @@ class TestHistoryCleanupServiceDualOperation:
             orphaned_timeout_minutes=45,
         )
 
-        with patch("tarsy.services.history_service.get_history_service") as mock_get_history:
+        with patch("tarsy.services.session_data.get_session_data_service") as mock_get_history:
             mock_history_service = Mock()
             mock_history_service.cleanup_orphaned_sessions.return_value = 0
             mock_get_history.return_value = mock_history_service

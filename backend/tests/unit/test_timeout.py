@@ -129,7 +129,7 @@ class TestTimeoutErrorHandlingInMain:
         # Mock the event publisher
         with patch('tarsy.main.alert_service', mock_alert_service), \
              patch('tarsy.main.get_settings') as mock_get_settings, \
-             patch('tarsy.services.history_service.get_history_service', return_value=mock_history_service), \
+             patch('tarsy.services.session_data.get_session_data_service', return_value=mock_history_service), \
              patch('tarsy.services.cancellation_tracker.is_user_cancel', return_value=False), \
              patch('tarsy.services.events.event_helpers.publish_session_timed_out', new_callable=AsyncMock) as mock_publish:
             

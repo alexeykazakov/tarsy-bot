@@ -17,7 +17,7 @@ from tarsy.utils.timestamp import now_us
 
 if TYPE_CHECKING:
     from tarsy.models.agent_config import ChainStageConfigModel
-    from tarsy.services.history_service import HistoryService
+    from tarsy.services.session_data import SessionDataService
 else:
     # Import for runtime use
     from tarsy.models.agent_config import ChainStageConfigModel
@@ -36,14 +36,14 @@ class StageExecutionManager:
     - Verifying database persistence
     """
     
-    def __init__(self, history_service: "HistoryService"):
+    def __init__(self, session_data_service: "SessionDataService"):
         """
         Initialize the stage execution manager.
         
         Args:
             history_service: History service for database operations
         """
-        self.history_service = history_service
+        self.session_data_service = session_data_service
     
     async def create_stage_execution(
         self,
@@ -73,7 +73,7 @@ class StageExecutionManager:
         Raises:
             RuntimeError: If stage execution record cannot be created
         """
-        if not self.history_service:
+        if not self.session_data_service:
             raise RuntimeError(
                 f"Cannot create stage execution for '{stage.name}': History service is unavailable. "
                 "All alert processing must be done as chains with proper stage tracking."
@@ -121,7 +121,7 @@ class StageExecutionManager:
         # We need to explicitly verify the record exists in the database
         try:
             # Use the history service's proper method to verify the record exists
-            verified_stage = await self.history_service.get_stage_execution(stage_execution.execution_id)
+            verified_stage = await self.session_data_service.get_stage_execution(stage_execution.execution_id)
             
             if not verified_stage:
                 raise RuntimeError(
@@ -152,14 +152,14 @@ class StageExecutionManager:
         Raises:
             RuntimeError: If session current stage cannot be updated
         """
-        if not self.history_service:
+        if not self.session_data_service:
             raise RuntimeError(
                 f"Cannot update session current stage for '{session_id}': History service is unavailable. "
                 "All alert processing must be done with proper stage tracking."
             )
         
         try:
-            await self.history_service.update_session_current_stage(
+            await self.session_data_service.update_session_current_stage(
                 session_id=session_id,
                 current_stage_index=stage_index,
                 current_stage_id=stage_execution_id
@@ -187,7 +187,7 @@ class StageExecutionManager:
         Raises:
             RuntimeError: If stage execution cannot be updated to completed status
         """
-        if not self.history_service:
+        if not self.session_data_service:
             raise RuntimeError(
                 f"Cannot update stage execution {stage_execution_id} as completed: History service is unavailable. "
                 "All alert processing must be done with proper stage tracking."
@@ -195,7 +195,7 @@ class StageExecutionManager:
         
         try:
             # Get the existing stage execution record
-            existing_stage = await self.history_service.get_stage_execution(stage_execution_id)
+            existing_stage = await self.session_data_service.get_stage_execution(stage_execution_id)
             if not existing_stage:
                 raise RuntimeError(
                     f"Stage execution {stage_execution_id} not found in database for completion update. "
@@ -247,14 +247,14 @@ class StageExecutionManager:
         Raises:
             RuntimeError: If stage execution cannot be updated to terminal status
         """
-        if not self.history_service:
+        if not self.session_data_service:
             raise RuntimeError(
                 f"Cannot update stage execution {stage_execution_id} as {operation_name}: History service is unavailable. "
                 "All alert processing must be done with proper stage tracking."
             )
 
         try:
-            existing_stage = await self.history_service.get_stage_execution(stage_execution_id)
+            existing_stage = await self.session_data_service.get_stage_execution(stage_execution_id)
             if not existing_stage:
                 raise RuntimeError(
                     f"Stage execution {stage_execution_id} not found in database for {operation_name} update. "
@@ -351,7 +351,7 @@ class StageExecutionManager:
         Raises:
             RuntimeError: If stage execution cannot be updated to paused status
         """
-        if not self.history_service:
+        if not self.session_data_service:
             raise RuntimeError(
                 f"Cannot update stage execution {stage_execution_id} as paused: History service is unavailable. "
                 "All alert processing must be done with proper stage tracking."
@@ -359,7 +359,7 @@ class StageExecutionManager:
         
         try:
             # Get the existing stage execution record
-            existing_stage = await self.history_service.get_stage_execution(stage_execution_id)
+            existing_stage = await self.session_data_service.get_stage_execution(stage_execution_id)
             if not existing_stage:
                 raise RuntimeError(
                     f"Stage execution {stage_execution_id} not found in database for pause update. "
@@ -407,7 +407,7 @@ class StageExecutionManager:
         Raises:
             RuntimeError: If stage execution cannot be updated to started status
         """
-        if not self.history_service:
+        if not self.session_data_service:
             raise RuntimeError(
                 f"Cannot update stage execution {stage_execution_id} as started: History service is unavailable. "
                 "All alert processing must be done with proper stage tracking."
@@ -415,7 +415,7 @@ class StageExecutionManager:
         
         try:
             # Get the existing stage execution record
-            existing_stage = await self.history_service.get_stage_execution(stage_execution_id)
+            existing_stage = await self.session_data_service.get_stage_execution(stage_execution_id)
             if not existing_stage:
                 raise RuntimeError(
                     f"Stage execution {stage_execution_id} not found in database for start update. "

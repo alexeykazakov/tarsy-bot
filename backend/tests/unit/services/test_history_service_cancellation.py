@@ -1,5 +1,5 @@
 """
-Unit tests for HistoryService session cancellation methods.
+Unit tests for SessionDataService session cancellation methods.
 
 Tests get_session and update_session_to_canceling methods with various scenarios.
 """
@@ -10,13 +10,12 @@ import pytest
 
 from tarsy.models.constants import AlertSessionStatus
 from tarsy.models.db_models import AlertSession
-from tarsy.services.history_service import HistoryService
+from tarsy.services.session_data import SessionDataService
 from tarsy.utils.timestamp import now_us
-from tests.utils import MockFactory
 
 
-class TestHistoryServiceCancellation:
-    """Test suite for HistoryService cancellation-related methods."""
+class TestSessionDataServiceCancellation:
+    """Test suite for SessionDataService cancellation-related methods."""
     
     @pytest.fixture
     def mock_settings(self, isolated_test_settings):
@@ -25,9 +24,9 @@ class TestHistoryServiceCancellation:
     
     @pytest.fixture
     def history_service(self, mock_settings):
-        """Create HistoryService instance with mocked dependencies."""
-        with patch('tarsy.services.history_service.get_settings', return_value=mock_settings):
-            service = HistoryService()
+        """Create SessionDataService instance with mocked dependencies."""
+        with patch('tarsy.services.session_data.base_infrastructure.get_settings', return_value=mock_settings):
+            service = SessionDataService()
             service._initialization_attempted = True
             service._is_healthy = True
             return service

@@ -116,18 +116,18 @@ async def handle_cancel_request(event: dict) -> None:
                 from tarsy.services.events.event_helpers import (
                     publish_session_cancelled,
                 )
-                from tarsy.services.history_service import get_history_service
+                from tarsy.services.session_data import get_session_data_service
                 
-                history_service = get_history_service()
-                if history_service:
-                    session = history_service.get_session(session_id)
+                session_data_service = get_session_data_service()
+                if session_data_service:
+                    session = session_data_service.get_session(session_id)
                     # Complete the cancellation: CANCELING → CANCELLED
                     # Sessions in PAUSED state transition to CANCELING when cancel is requested,
                     # but have no active task to handle the completion
                     if session and session.status == AlertSessionStatus.CANCELING.value:
                         logger.info(f"Completing cancellation for non-active session {session_id} (was likely PAUSED)")
                         # Update session status to CANCELLED
-                        history_service.update_session_status(
+                        session_data_service.update_session_status(
                             session_id,
                             AlertSessionStatus.CANCELLED.value
                         )
@@ -158,22 +158,22 @@ async def mark_active_tasks_as_interrupted(reason: str) -> None:
         reason: Reason for marking tasks as interrupted (e.g., "after timeout", "after error")
     """
     try:
-        from tarsy.services.history_service import get_history_service
-        history_service = get_history_service()
+        from tarsy.services.session_data import get_session_data_service
+        session_data_service = get_session_data_service()
         
         # Safety check: ensure service was successfully initialized
-        if not history_service:
+        if not session_data_service:
             return
         
         pod_id = get_pod_id()
         
         # Sessions
-        interrupted_count = await history_service.mark_pod_sessions_interrupted(pod_id)
+        interrupted_count = await session_data_service.mark_pod_sessions_interrupted(pod_id)
         if interrupted_count > 0:
             logger.info(f"Marked {interrupted_count} session(s) as interrupted {reason} for pod {pod_id}")
         
         # Chats
-        chat_count = await history_service.mark_pod_chats_interrupted(pod_id)
+        chat_count = await session_data_service.mark_pod_chats_interrupted(pod_id)
         if chat_count > 0:
             logger.info(f"Marked {chat_count} chat(s) as interrupted {reason} for pod {pod_id}")
     except Exception as e:
@@ -208,9 +208,9 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     # Timeout-based detection: sessions with no interaction for configured timeout are marked as failed
     # This should happen after database initialization but before processing new alerts
     try:
-        from tarsy.services.history_service import get_history_service
-        history_service = get_history_service()
-        cleaned_sessions = history_service.cleanup_orphaned_sessions(settings.orphaned_session_timeout_minutes)
+        from tarsy.services.session_data import get_session_data_service
+        session_data_service = get_session_data_service()
+        cleaned_sessions = session_data_service.cleanup_orphaned_sessions(settings.orphaned_session_timeout_minutes)
         if cleaned_sessions > 0:
             logger.info(f"Startup cleanup: marked {cleaned_sessions} orphaned sessions as failed")
     except Exception as e:
@@ -257,10 +257,10 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     
     # Initialize typed hook system
     from tarsy.hooks.hook_registry import get_hook_registry
-    from tarsy.services.history_service import get_history_service
+    from tarsy.services.session_data import get_session_data_service
     hook_registry = get_hook_registry()
-    history_service = get_history_service()
-    await hook_registry.initialize_hooks(history_service=history_service)
+    session_data_service = get_session_data_service()
+    await hook_registry.initialize_hooks(session_data_service=session_data_service)
     logger.info("Typed hook system initialized successfully")
     
     # Initialize event system (async database engine and event manager)
@@ -330,7 +330,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         from tarsy.services.session_claim_worker import SessionClaimWorker
         
         session_claim_worker = SessionClaimWorker(
-            history_service=history_service,
+            session_data_service=session_data_service,
             max_global_concurrent=settings.max_concurrent_alerts,
             claim_interval=settings.queue_claim_interval_seconds,
             process_callback=process_alert_background,
@@ -366,7 +366,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         
         # Initialize chat service (stored in module-level global for dependency injection)
         _ = initialize_chat_service(
-            history_service=history_service,
+            session_data_service=session_data_service,
             agent_factory=alert_service.agent_factory,
             mcp_client_factory=alert_service.mcp_client_factory,
         )
@@ -603,14 +603,14 @@ async def health_check(response: Response) -> Dict[str, Any]:
         
         # Add queue metrics
         try:
-            from tarsy.services.history_service import get_history_service
-            history_service = get_history_service()
-            if history_service:
+            from tarsy.services.session_data import get_session_data_service
+            session_data_service = get_session_data_service()
+            if session_data_service:
                 pending_count = await asyncio.to_thread(
-                    history_service.count_pending_sessions
+                    session_data_service.count_pending_sessions
                 )
                 active_count = await asyncio.to_thread(
-                    history_service.count_sessions_by_status,
+                    session_data_service.count_sessions_by_status,
                     AlertSessionStatus.IN_PROGRESS.value
                 )
                 health_status["queue"] = {
@@ -790,27 +790,27 @@ async def mark_session_cancelled_or_timed_out(
     from tarsy.models.constants import AlertSessionStatus
     from tarsy.services.cancellation_tracker import is_user_cancel
     from tarsy.services.events.event_helpers import publish_session_cancelled, publish_session_timed_out
-    from tarsy.services.history_service import get_history_service
+    from tarsy.services.session_data import get_session_data_service
     
-    history_service = get_history_service()
-    if not history_service:
-        logger.warning(f"Session {session_id} - history service unavailable for status update")
+    session_data_service = get_session_data_service()
+    if not session_data_service:
+        logger.warning(f"Session {session_id} - session data service unavailable for status update")
         return False
     
     if is_user_cancel(session_id):
         # User-requested cancellation
-        history_service.update_session_status(
+        session_data_service.update_session_status(
             session_id=session_id,
             status=AlertSessionStatus.CANCELLED.value,
             error_message="Session cancelled by user"
         )
         if cancel_paused_stages:
-            await history_service.cancel_all_paused_stages(session_id)
+            await session_data_service.cancel_all_paused_stages(session_id)
         await publish_session_cancelled(session_id)
         logger.info(f"Session {session_id} cancelled by user")
     else:
         # System timeout
-        history_service.update_session_status(
+        session_data_service.update_session_status(
             session_id=session_id,
             status=AlertSessionStatus.TIMED_OUT.value,
             error_message=timeout_error_msg
@@ -884,11 +884,11 @@ async def process_alert_background(session_id: str, alert: ChainContext) -> None
         # Handle cancellation explicitly to prevent it from being caught by Exception handler
         # Check if session already has a terminal status (inner handler may have updated it)
         from tarsy.models.constants import AlertSessionStatus
-        from tarsy.services.history_service import get_history_service
+        from tarsy.services.session_data import get_session_data_service
         
-        history_service = get_history_service()
-        if history_service:
-            session = history_service.get_session(session_id)
+        session_data_service = get_session_data_service()
+        if session_data_service:
+            session = session_data_service.get_session(session_id)
             if session and session.status in AlertSessionStatus.terminal_values():
                 logger.info(f"Session {session_id} already in terminal state ({session.status}) - exiting gracefully")
                 return

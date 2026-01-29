@@ -23,9 +23,9 @@ class TestSessionManagerInitialization:
         """Test that SessionManager initializes with history service."""
         history_service = Mock()
         
-        manager = SessionManager(history_service=history_service)
+        manager = SessionManager(session_data_service=history_service)
         
-        assert manager.history_service == history_service
+        assert manager.session_data_service == history_service
 
 
 @pytest.mark.unit
@@ -37,7 +37,7 @@ class TestCreateChainHistorySession:
         history_service = Mock()
         history_service.create_session = Mock(return_value=True)
         
-        manager = SessionManager(history_service=history_service)
+        manager = SessionManager(session_data_service=history_service)
         
         # Create mock chain context
         from tarsy.models.alert import ProcessingAlert
@@ -77,7 +77,7 @@ class TestCreateChainHistorySession:
         history_service = Mock()
         history_service.create_session = Mock(return_value=False)
         
-        manager = SessionManager(history_service=history_service)
+        manager = SessionManager(session_data_service=history_service)
         
         from tarsy.models.alert import ProcessingAlert
         from tarsy.models.processing_context import ChainContext
@@ -113,7 +113,7 @@ class TestUpdateSessionStatus:
         history_service = Mock()
         history_service.update_session_status = Mock()
         
-        manager = SessionManager(history_service=history_service)
+        manager = SessionManager(session_data_service=history_service)
         
         manager.update_session_status(
             session_id="session-1",
@@ -135,7 +135,7 @@ class TestUpdateSessionStatus:
         history_service = Mock()
         history_service.update_session_status = Mock()
         
-        manager = SessionManager(history_service=history_service)
+        manager = SessionManager(session_data_service=history_service)
         
         manager.update_session_status(
             session_id="session-1",
@@ -159,7 +159,7 @@ class TestUpdateSessionStatus:
         history_service = Mock()
         history_service.update_session_status = Mock()
         
-        manager = SessionManager(history_service=history_service)
+        manager = SessionManager(session_data_service=history_service)
         
         manager.update_session_status(
             session_id="session-1",
@@ -184,7 +184,7 @@ class TestUpdateSessionStatus:
         history_service = Mock()
         history_service.update_session_status = Mock()
         
-        manager = SessionManager(history_service=history_service)
+        manager = SessionManager(session_data_service=history_service)
         
         manager.update_session_status(
             session_id="session-1",
@@ -209,7 +209,7 @@ class TestUpdateSessionStatus:
         history_service = Mock()
         history_service.update_session_status = Mock()
         
-        manager = SessionManager(history_service=history_service)
+        manager = SessionManager(session_data_service=history_service)
         
         pause_meta = {
             "reason": "max_iterations_reached",
@@ -237,7 +237,7 @@ class TestUpdateSessionStatus:
         """Test that update is skipped when session_id is None."""
         history_service = Mock()
         
-        manager = SessionManager(history_service=history_service)
+        manager = SessionManager(session_data_service=history_service)
         
         # Should not raise an error and should not call history service
         manager.update_session_status(
@@ -252,7 +252,7 @@ class TestUpdateSessionStatus:
         history_service = Mock()
         history_service.update_session_status = Mock(side_effect=RuntimeError("Database connection failed"))
         
-        manager = SessionManager(history_service=history_service)
+        manager = SessionManager(session_data_service=history_service)
         
         # Exception should be raised, not swallowed
         with pytest.raises(RuntimeError, match="Database connection failed"):
@@ -271,7 +271,7 @@ class TestUpdateSessionError:
         history_service = Mock()
         history_service.update_session_status = Mock()
         
-        manager = SessionManager(history_service=history_service)
+        manager = SessionManager(session_data_service=history_service)
         
         manager.update_session_error("session-1", "Test error occurred")
         
@@ -285,7 +285,7 @@ class TestUpdateSessionError:
         """Test that error update is skipped when session_id is None."""
         history_service = Mock()
         
-        manager = SessionManager(history_service=history_service)
+        manager = SessionManager(session_data_service=history_service)
         
         manager.update_session_error(None, "Test error")
         
@@ -300,7 +300,7 @@ class TestUpdateSessionError:
         history_service = Mock()
         history_service.update_session_status = Mock(side_effect=RuntimeError("Database connection failed"))
         
-        manager = SessionManager(history_service=history_service)
+        manager = SessionManager(session_data_service=history_service)
         
         # Exception should be swallowed, not raised
         manager.update_session_error("session-1", "Original error message")

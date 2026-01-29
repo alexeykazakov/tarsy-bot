@@ -22,7 +22,7 @@ from tarsy.models.history_models import (
     PaginatedSessions,
     SessionStats,
 )
-from tarsy.services.history_service import HistoryService, get_history_service
+from tarsy.services.session_data import SessionDataService, get_session_data_service
 from tarsy.utils.logger import get_logger
 from tarsy.utils.timestamp import now_us
 
@@ -75,7 +75,7 @@ async def list_sessions(
     page_size: int = Query(20, ge=1, le=100, description="Items per page (1-100)"),
     sort_by: Optional[str] = Query(None, description="Field to sort by. Supported: 'started_at_us', 'status', 'alert_type', 'agent_type', 'author', 'duration_ms'. Unsupported values fall back to default ordering."),
     sort_order: Optional[str] = Query(None, description="Sort order: 'asc' or 'desc'"),
-    history_service: Annotated[HistoryService, Depends(get_history_service)]
+    session_data_service: Annotated[SessionDataService, Depends(get_session_data_service)]
 ) -> PaginatedSessions:
     """
     List alert processing sessions with filtering and pagination.
@@ -124,7 +124,7 @@ async def list_sessions(
                 detail="start_date_us must be before end_date_us"
             )
         
-        paginated_sessions = history_service.get_sessions_list(
+        paginated_sessions = session_data_service.get_sessions_list(
             filters=filters,
             page=page,
             page_size=page_size,
@@ -186,7 +186,7 @@ async def list_sessions(
 async def get_session_detail(
     *,
     session_id: str = Path(..., description="Unique session identifier"),
-    history_service: Annotated[HistoryService, Depends(get_history_service)]
+    session_data_service: Annotated[SessionDataService, Depends(get_session_data_service)]
 ) -> DetailedSession:
     """
     Get detailed session information with chronological timeline.
@@ -202,7 +202,7 @@ async def get_session_detail(
         HTTPException: 404 if session not found, 500 for internal errors
     """
     try:
-        detailed_session = history_service.get_session_details(session_id)
+        detailed_session = session_data_service.get_session_details(session_id)
         
         if not detailed_session:
             raise HTTPException(
@@ -238,12 +238,12 @@ async def get_session_detail(
 async def get_session_summary(
     *,
     session_id: str = Path(..., description="Unique session identifier"),
-    history_service: Annotated[HistoryService, Depends(get_history_service)]
+    session_data_service: Annotated[SessionDataService, Depends(get_session_data_service)]
 ) -> SessionStats:
     """Get summary statistics for a specific session (lightweight)."""
     try:
         logger.info(f"Fetching summary statistics for session {session_id}")
-        session_stats = await history_service.get_session_summary(session_id)
+        session_stats = await session_data_service.get_session_summary(session_id)
         
         if session_stats is None:
             raise HTTPException(
@@ -306,7 +306,7 @@ async def get_session_final_analysis(
         False,
         description="Include chat LLM conversation history if a follow-up chat exists"
     ),
-    history_service: Annotated[HistoryService, Depends(get_history_service)]
+    session_data_service: Annotated[SessionDataService, Depends(get_session_data_service)]
 ) -> FinalAnalysisResponse:
     """
     Get final analysis content for any session with optional conversation history.
@@ -328,7 +328,7 @@ async def get_session_final_analysis(
         from tarsy.models.constants import AlertSessionStatus
         
         # Get the session
-        session = history_service.get_session(session_id)
+        session = session_data_service.get_session(session_id)
         
         if not session:
             raise HTTPException(
@@ -341,7 +341,7 @@ async def get_session_final_analysis(
         chat_conversation = None
         
         if include_conversation or include_chat_conversation:
-            llm_conversation, chat_conversation = history_service.get_session_conversation_history(
+            llm_conversation, chat_conversation = session_data_service.get_session_conversation_history(
                 session_id=session_id,
                 include_chat=include_chat_conversation
             )
@@ -385,11 +385,11 @@ async def get_session_final_analysis(
     description="Get currently active/processing sessions"
 )
 async def get_active_sessions(
-    history_service: Annotated[HistoryService, Depends(get_history_service)]
+    session_data_service: Annotated[SessionDataService, Depends(get_session_data_service)]
 ):
     """Get list of currently active sessions."""
     try:
-        active_sessions = history_service.get_active_sessions()
+        active_sessions = session_data_service.get_active_sessions()
         # Convert to the format expected by the frontend
         return [
             {
@@ -425,11 +425,11 @@ async def get_active_sessions(
     description="Get available filter options for dashboard filtering"
 )
 async def get_filter_options(
-    history_service: Annotated[HistoryService, Depends(get_history_service)]
+    session_data_service: Annotated[SessionDataService, Depends(get_session_data_service)]
 ):
     """Get available filter options for the dashboard."""
     try:
-        filter_options = history_service.get_filter_options()
+        filter_options = session_data_service.get_filter_options()
         return filter_options
         
     except RuntimeError as e:
@@ -444,7 +444,7 @@ async def get_filter_options(
 
 async def check_cancellation_completion(
     session_id: str,
-    history_service: HistoryService,
+    session_data_service: SessionDataService,
     timeout_seconds: int = 300
 ) -> None:
     """
@@ -456,7 +456,7 @@ async def check_cancellation_completion(
     
     Args:
         session_id: Session to check
-        history_service: History service for database access
+        session_data_service: Session data service for database access
         timeout_seconds: How long to wait before declaring orphaned
     """
     from tarsy.models.constants import AlertSessionStatus
@@ -473,7 +473,7 @@ async def check_cancellation_completion(
         elapsed += check_interval
         
         # Check current session status
-        session = history_service.get_session(session_id)
+        session = session_data_service.get_session(session_id)
         
         if not session:
             logger.warning(f"Session {session_id} not found during orphan detection")
@@ -490,7 +490,7 @@ async def check_cancellation_completion(
         logger.debug(f"Session {session_id} still CANCELING after {elapsed}s, checking again...")
     
     # Timeout reached and still CANCELING - mark as orphaned
-    session = history_service.get_session(session_id)
+    session = session_data_service.get_session(session_id)
     
     if not session:
         logger.warning(f"Session {session_id} not found after timeout")
@@ -504,14 +504,14 @@ async def check_cancellation_completion(
         )
         
         # Update to CANCELLED with orphan message
-        history_service.update_session_status(
+        session_data_service.update_session_status(
             session_id=session_id,
             status=AlertSessionStatus.CANCELLED.value,
             error_message="Session cancelled (no response from processing pod - likely orphaned)"
         )
         
         # Update all paused stages to CANCELLED for consistency
-        await history_service.cancel_all_paused_stages(session_id)
+        await session_data_service.cancel_all_paused_stages(session_id)
         
         # Publish cancellation event for UI
         await publish_session_cancelled(session_id)
@@ -532,7 +532,7 @@ async def cancel_session(
     *,
     session_id: str = Path(..., description="Session ID to cancel"),
     background_tasks: BackgroundTasks,
-    history_service: Annotated[HistoryService, Depends(get_history_service)]
+    session_data_service: Annotated[SessionDataService, Depends(get_session_data_service)]
 ) -> dict:
     """
     Cancel an active session.
@@ -560,7 +560,7 @@ async def cancel_session(
     from tarsy.services.cancellation_tracker import mark_cancelled, clear as clear_cancelled
     
     # Step 1: Validate session exists
-    session = history_service.get_session(session_id)
+    session = session_data_service.get_session(session_id)
     if not session:
         raise HTTPException(status_code=404, detail=f"Session {session_id} not found")
     
@@ -573,7 +573,7 @@ async def cancel_session(
         
         try:
             # Update session status
-            history_service.update_session_status(
+            session_data_service.update_session_status(
                 session_id=session_id,
                 status=AlertSessionStatus.CANCELLED.value,
                 error_message="Session cancelled by user"
@@ -583,7 +583,7 @@ async def cancel_session(
             mark_cancelled(session_id)
             
             # Update all paused stages to CANCELLED for consistency
-            await history_service.cancel_all_paused_stages(session_id)
+            await session_data_service.cancel_all_paused_stages(session_id)
             
             # Publish cancellation event for UI
             await publish_session_cancelled(session_id)
@@ -599,7 +599,7 @@ async def cancel_session(
             raise
     
     # Step 3: For active sessions, update status to CANCELING
-    success, current_status = history_service.update_session_to_canceling(session_id)
+    success, current_status = session_data_service.update_session_to_canceling(session_id)
     
     if not success:
         if current_status in AlertSessionStatus.terminal_values():
@@ -629,7 +629,7 @@ async def cancel_session(
     background_tasks.add_task(
         check_cancellation_completion,
         session_id,
-        history_service,
+        session_data_service,
         timeout_seconds=orphan_timeout
     )
     
@@ -698,7 +698,7 @@ async def resume_session(
     *,
     session_id: str = Path(..., description="Session ID to resume"),
     background_tasks: BackgroundTasks,
-    history_service: Annotated[HistoryService, Depends(get_history_service)]
+    session_data_service: Annotated[SessionDataService, Depends(get_session_data_service)]
 ) -> dict:
     """
     Resume a paused session.
@@ -720,7 +720,7 @@ async def resume_session(
     from tarsy.services.alert_service import get_alert_service
     
     # Step 1: Validate session exists
-    session = history_service.get_session(session_id)
+    session = session_data_service.get_session(session_id)
     if not session:
         raise HTTPException(status_code=404, detail=f"Session {session_id} not found")
     

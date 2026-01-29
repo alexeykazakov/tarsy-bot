@@ -11,7 +11,7 @@ import pytest
 
 from tarsy.models.constants import AlertSessionStatus
 from tarsy.models.db_models import AlertSession, Chat
-from tarsy.services.history_service import HistoryService
+from tarsy.services.session_data import SessionDataService
 from tarsy.utils.timestamp import now_us
 
 
@@ -20,7 +20,7 @@ class TestChatOrphanDetection:
     """Integration tests for chat orphan detection and cleanup."""
     
     @pytest.fixture
-    async def completed_session_with_chat(self, history_service_with_test_db: HistoryService):
+    async def completed_session_with_chat(self, history_service_with_test_db: SessionDataService):
         """Create a completed session with a chat for testing."""
         history_service = history_service_with_test_db
         
@@ -224,7 +224,7 @@ class TestChatOrphanDetectionMultipleChats:
     """Test orphan detection with multiple chats scenario."""
     
     @pytest.fixture
-    async def multiple_chats_scenario(self, history_service_with_test_db: HistoryService):
+    async def multiple_chats_scenario(self, history_service_with_test_db: SessionDataService):
         """Create multiple chats for testing orphan detection."""
         history_service = history_service_with_test_db
         

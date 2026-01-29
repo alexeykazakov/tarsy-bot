@@ -21,7 +21,7 @@ from tarsy.hooks.history_hooks import (
     StageExecutionHistoryHook,
 )
 from tarsy.hooks.hook_context import get_hook_manager
-from tarsy.services.history_service import HistoryService
+from tarsy.services.session_data import SessionDataService
 
 logger = logging.getLogger(__name__)
 
@@ -38,12 +38,12 @@ class HookRegistry:
         self.typed_hook_manager = get_hook_manager()
         self._initialized = False
 
-    async def initialize_hooks(self, history_service: HistoryService) -> None:
+    async def initialize_hooks(self, session_data_service: SessionDataService) -> None:
         """
         Initialize and register all typed hooks.
         
         Args:
-            history_service: History service for database logging
+            session_data_service: Session data service for database logging
         """
         if self._initialized:
             logger.debug("Typed hooks already initialized")
@@ -51,10 +51,10 @@ class HookRegistry:
         
         try:
             # Initialize history hooks
-            llm_history_hook = LLMHistoryHook(history_service)
-            mcp_history_hook = MCPHistoryHook(history_service)
-            mcp_list_history_hook = MCPListHistoryHook(history_service)
-            stage_history_hook = StageExecutionHistoryHook(history_service)
+            llm_history_hook = LLMHistoryHook(session_data_service)
+            mcp_history_hook = MCPHistoryHook(session_data_service)
+            mcp_list_history_hook = MCPListHistoryHook(session_data_service)
+            stage_history_hook = StageExecutionHistoryHook(session_data_service)
             
             # Initialize event hooks (publish to event stream)
             llm_event_hook = LLMEventHook()

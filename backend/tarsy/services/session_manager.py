@@ -15,7 +15,7 @@ from tarsy.utils.logger import get_module_logger
 if TYPE_CHECKING:
     from tarsy.models.agent_config import ChainConfigModel
     from tarsy.models.processing_context import ChainContext
-    from tarsy.services.history_service import HistoryService
+    from tarsy.services.session_data import SessionDataService
 
 logger = get_module_logger(__name__)
 
@@ -30,14 +30,14 @@ class SessionManager:
     - Handling session errors
     """
     
-    def __init__(self, history_service: "HistoryService"):
+    def __init__(self, session_data_service: "SessionDataService"):
         """
         Initialize the session manager.
         
         Args:
             history_service: History service for database operations
         """
-        self.history_service = history_service
+        self.session_data_service = session_data_service
     
     def create_chain_history_session(
         self, 
@@ -61,11 +61,11 @@ class SessionManager:
             a tuple or result object if differentiated handling becomes necessary.
         """
         try:
-            if not self.history_service:
+            if not self.session_data_service:
                 return False
             
             # Store chain information in session using ChainContext and ChainDefinition
-            created_successfully = self.history_service.create_session(
+            created_successfully = self.session_data_service.create_session(
                 chain_context=chain_context,
                 chain_definition=chain_definition
             )
@@ -108,11 +108,11 @@ class SessionManager:
                       of critical issues (DB failures, bugs, etc.)
         """
         # Graceful degradation: skip if no session or history service unavailable
-        if not session_id or not self.history_service:
+        if not session_id or not self.session_data_service:
             return
             
         # Let exceptions propagate - they indicate serious issues that should be visible
-        self.history_service.update_session_status(
+        self.session_data_service.update_session_status(
             session_id=session_id,
             status=status,
             error_message=error_message,
@@ -136,12 +136,12 @@ class SessionManager:
             This ensures the original error is properly propagated to the caller.
         """
         # Graceful degradation: skip if no history service or no session
-        if not session_id or not self.history_service:
+        if not session_id or not self.session_data_service:
             return
             
         try:
             # Status 'failed' will automatically set completed_at_us in the history service
-            self.history_service.update_session_status(
+            self.session_data_service.update_session_status(
                 session_id=session_id,
                 status=AlertSessionStatus.FAILED.value,
                 error_message=error_message
@@ -164,12 +164,12 @@ class SessionManager:
             Exceptions from history service are logged but NOT re-raised.
         """
         # Graceful degradation: skip if no history service or no session
-        if not session_id or not self.history_service:
+        if not session_id or not self.session_data_service:
             return
             
         try:
             # Status 'timed_out' will automatically set completed_at_us in the history service
-            self.history_service.update_session_status(
+            self.session_data_service.update_session_status(
                 session_id=session_id,
                 status=AlertSessionStatus.TIMED_OUT.value,
                 error_message=error_message

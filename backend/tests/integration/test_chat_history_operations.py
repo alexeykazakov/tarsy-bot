@@ -1,14 +1,14 @@
 """
 Integration tests for chat database operations.
 
-Tests HistoryRepository and HistoryService chat CRUD operations with real database.
+Tests HistoryRepository and SessionDataService chat CRUD operations with real database.
 """
 
 import pytest
 
 from tarsy.models.constants import AlertSessionStatus
 from tarsy.models.db_models import AlertSession, Chat, ChatUserMessage
-from tarsy.services.history_service import HistoryService
+from tarsy.services.session_data import SessionDataService
 from tarsy.utils.timestamp import now_us
 
 
@@ -17,7 +17,7 @@ class TestChatHistoryOperations:
     """Integration tests for chat database operations."""
     
     @pytest.fixture
-    async def test_session(self, history_service_with_test_db: HistoryService):
+    async def test_session(self, history_service_with_test_db: SessionDataService):
         """Create a test session for chat tests."""
         history_service = history_service_with_test_db
         

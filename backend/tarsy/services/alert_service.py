@@ -40,7 +40,7 @@ from tarsy.models.pause_metadata import PauseMetadata, PauseReason
 from tarsy.models.processing_context import ChainContext
 from tarsy.services.agent_factory import AgentFactory
 from tarsy.services.chain_registry import ChainRegistry
-from tarsy.services.history_service import get_history_service
+from tarsy.services.session_data import get_session_data_service
 from tarsy.services.mcp_server_registry import MCPServerRegistry
 from tarsy.services.parallel_stage_executor import ParallelStageExecutor
 from tarsy.services.response_formatter import (
@@ -80,7 +80,7 @@ class AlertService:
 
         # Initialize services
         self.runbook_service = RunbookService(settings, runbook_http_client)
-        self.history_service = get_history_service()
+        self.session_data_service = get_session_data_service()
         
         # Initialize registries with loaded configuration
         config_loader = ConfigurationLoader(settings.agent_config_path) if settings.agent_config_path else None
@@ -100,8 +100,8 @@ class AlertService:
         self.mcp_client_factory = MCPClientFactory(settings, self.mcp_server_registry)
         
         # Initialize manager classes for modular architecture
-        self.stage_manager = StageExecutionManager(history_service=self.history_service)
-        self.session_manager = SessionManager(history_service=self.history_service)
+        self.stage_manager = StageExecutionManager(session_data_service=self.session_data_service)
+        self.session_manager = SessionManager(session_data_service=self.session_data_service)
         
         # Initialize agent factory with dependencies (no MCP client - provided per agent)
         self.agent_factory = None  # Will be initialized in initialize()
@@ -336,7 +336,7 @@ class AlertService:
             
             # Mark session as being processed by this pod
             # Note: We mark the session even if it wasn't created here (it may have been created by the endpoint)
-            if self.history_service:
+            if self.session_data_service:
                 from tarsy.main import get_pod_id
                 pod_id = get_pod_id()
                 
@@ -347,7 +347,7 @@ class AlertService:
                         "Set TARSY_POD_ID in Kubernetes pod spec."
                     )
                 
-                await self.history_service.start_session_processing(
+                await self.session_data_service.start_session_processing(
                     chain_context.session_id, 
                     pod_id
                 )
@@ -560,11 +560,11 @@ class AlertService:
             ValueError: If validation fails (not found, not paused, etc.)
             Exception: If cancellation fails
         """
-        if not self.history_service:
+        if not self.session_data_service:
             raise ValueError("History service not available")
         
         # Step 1: Validate session exists and is paused
-        session = self.history_service.get_session(session_id)
+        session = self.session_data_service.get_session(session_id)
         if not session:
             raise ValueError(f"Session {session_id} not found")
         
@@ -572,7 +572,7 @@ class AlertService:
             raise ValueError(f"Session {session_id} is not paused (status: {session.status})")
         
         # Step 2: Load child stage execution
-        child_stage = await self.history_service.get_stage_execution(execution_id)
+        child_stage = await self.session_data_service.get_stage_execution(execution_id)
         if not child_stage:
             raise ValueError(f"Stage execution {execution_id} not found")
         
@@ -605,7 +605,7 @@ class AlertService:
             child_stage.duration_ms = int(duration_us / 1000)
         
         # Persist the updated child stage
-        await self.history_service.update_stage_execution(child_stage)
+        await self.session_data_service.update_stage_execution(child_stage)
         
         # Trigger hooks for child stage update
         from tarsy.hooks.hook_context import stage_execution_context
@@ -613,7 +613,7 @@ class AlertService:
             pass  # Hooks are triggered on context enter/exit
         
         # Step 4: Load all sibling stages for aggregation
-        all_children = await self.history_service.get_parallel_stage_children(
+        all_children = await self.session_data_service.get_parallel_stage_children(
             child_stage.parent_stage_execution_id
         )
         
@@ -636,7 +636,7 @@ class AlertService:
             metadatas.append(metadata)
         
         # Step 6: Load parent stage to get success_policy
-        parent_stage = await self.history_service.get_stage_execution(
+        parent_stage = await self.session_data_service.get_stage_execution(
             child_stage.parent_stage_execution_id
         )
         if not parent_stage:
@@ -676,7 +676,7 @@ class AlertService:
                     parent_stage.duration_ms = int(duration_us / 1000)
             
             # Persist the updated parent stage
-            await self.history_service.update_stage_execution(parent_stage)
+            await self.session_data_service.update_stage_execution(parent_stage)
             
             # Trigger hooks for parent stage update
             async with stage_execution_context(parent_stage):
@@ -781,11 +781,11 @@ class AlertService:
             logger.info(f"Starting chain continuation after parallel stage completion: {session_id}")
             
             # Get session and find the completed parallel stage
-            session = self.history_service.get_session(session_id)
+            session = self.session_data_service.get_session(session_id)
             if not session:
                 raise Exception(f"Session {session_id} not found")
             
-            stage_executions = await self.history_service.get_stage_executions(session_id)
+            stage_executions = await self.session_data_service.get_stage_executions(session_id)
             
             completed_parent_stage = None
             for stage_exec in stage_executions:
@@ -1031,10 +1031,10 @@ class AlertService:
         
         try:
             # Step 1: Validate session exists and is paused
-            if not self.history_service:
+            if not self.session_data_service:
                 raise Exception("History service not available")
             
-            session = self.history_service.get_session(session_id)
+            session = self.session_data_service.get_session(session_id)
             if not session:
                 raise Exception(f"Session {session_id} not found")
             
@@ -1044,7 +1044,7 @@ class AlertService:
             logger.info(f"Resuming paused session {session_id}")
             
             # Step 2: Get all stage executions for this session
-            stage_executions = await self.history_service.get_stage_executions(session_id)
+            stage_executions = await self.session_data_service.get_stage_executions(session_id)
             
             # Find paused stage
             paused_stage = None
@@ -1110,7 +1110,7 @@ class AlertService:
                     session_mcp_client=session_mcp_client,
                     chain_definition=chain_definition,
                     stage_index=stage_index,
-                    history_service=self.history_service
+                    session_data_service=self.session_data_service
                 )
                 
                 # Add result to context (use paused parent's execution_id as key)
@@ -1122,7 +1122,7 @@ class AlertService:
                     logger.info("Parallel stage completed after resume - continuing with synthesis")
                     
                     # Get fresh stage executions for synthesis index calculation
-                    existing_stages = await self.history_service.get_stage_executions(session_id)
+                    existing_stages = await self.session_data_service.get_stage_executions(session_id)
                     stage_config = chain_definition.stages[stage_index]
                     
                     # Note: This is called in async context, not returned
@@ -1324,7 +1324,7 @@ class AlertService:
             # Track actual executed stage count (including dynamically added synthesis stages)
             # When resuming, count existing stages to get accurate count
             if chain_context.current_stage_name:
-                existing_stages = await self.history_service.get_stage_executions(chain_context.session_id)
+                existing_stages = await self.session_data_service.get_stage_executions(chain_context.session_id)
                 # Filter to non-parallel-child stages (parents and single stages only)
                 non_child_stages = [s for s in existing_stages if s.parent_stage_execution_id is None]
                 executed_stage_count = len(non_child_stages)
@@ -1351,7 +1351,7 @@ class AlertService:
                     # For new sessions or subsequent stages, create new stage execution record
                     if i == start_from_stage and chain_context.current_stage_name:
                         # Resuming - find existing stage execution ID from history
-                        stage_executions = await self.history_service.get_stage_executions(chain_context.session_id)
+                        stage_executions = await self.session_data_service.get_stage_executions(chain_context.session_id)
                         paused_stage_exec = next((s for s in stage_executions if s.stage_name == stage.name and s.status == StageStatus.PAUSED.value), None)
                         if paused_stage_exec:
                             stage_execution_id = paused_stage_exec.execution_id
@@ -1405,8 +1405,8 @@ class AlertService:
                         await self.stage_manager.update_session_current_stage(chain_context.session_id, i, parent_execution_id)
                         
                         # Record stage transition as interaction (non-blocking)
-                        if hasattr(self.history_service, "record_session_interaction"):
-                            rec = self.history_service.record_session_interaction
+                        if hasattr(self.session_data_service, "record_session_interaction"):
+                            rec = self.session_data_service.record_session_interaction
                             if asyncio.iscoroutinefunction(rec):
                                 await rec(chain_context.session_id)
                             else:
@@ -1524,8 +1524,8 @@ class AlertService:
                         # Single-agent execution (existing logic)
                         
                         # Record stage transition as interaction (non-blocking)
-                        if hasattr(self.history_service, "record_session_interaction"):
-                            rec = self.history_service.record_session_interaction
+                        if hasattr(self.session_data_service, "record_session_interaction"):
+                            rec = self.session_data_service.record_session_interaction
                             if asyncio.iscoroutinefunction(rec):
                                 await rec(chain_context.session_id)
                             else:

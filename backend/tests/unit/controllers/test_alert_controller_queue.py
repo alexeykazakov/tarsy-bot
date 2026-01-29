@@ -35,7 +35,7 @@ def mock_alert_service():
 @pytest.fixture
 def mock_history_service():
     """Mock history service."""
-    with patch("tarsy.services.history_service.get_history_service") as mock:
+    with patch("tarsy.services.session_data.get_session_data_service") as mock:
         service = MagicMock()
         service.repository = MagicMock()
         service.count_pending_sessions = MagicMock(return_value=0)

@@ -25,7 +25,7 @@ from tarsy.models.unified_interactions import (
     MCPInteraction,
     MessageRole,
 )
-from tarsy.services.history_service import HistoryService
+from tarsy.services.session_data import SessionDataService
 
 
 @pytest.mark.unit
@@ -55,7 +55,7 @@ class TestLLMHistoryHook:
     @pytest.fixture
     def mock_history_service(self):
         """Mock history service."""
-        service = Mock(spec=HistoryService)
+        service = Mock(spec=SessionDataService)
         service.store_llm_interaction = Mock(return_value=True)
         return service
     
@@ -83,7 +83,7 @@ class TestLLMHistoryHook:
         """Test hook initializes correctly."""
         hook = LLMHistoryHook(mock_history_service)
         assert hook.name == "llm_history"
-        assert hook.history_service == mock_history_service
+        assert hook.session_data_service == mock_history_service
     
     @pytest.mark.asyncio
     async def test_execute_success(self, llm_hook, mock_history_service, sample_llm_interaction):
@@ -168,7 +168,7 @@ class TestMCPHistoryHook:
     @pytest.fixture
     def mock_history_service(self):
         """Mock history service."""
-        service = Mock(spec=HistoryService)
+        service = Mock(spec=SessionDataService)
         service.store_mcp_interaction = Mock(return_value=True)
         return service
     
@@ -193,7 +193,7 @@ class TestMCPHistoryHook:
         """Test hook initializes correctly."""
         hook = MCPHistoryHook(mock_history_service)
         assert hook.name == "mcp_history"
-        assert hook.history_service == mock_history_service
+        assert hook.session_data_service == mock_history_service
     
     @pytest.mark.asyncio
     async def test_execute_success(self, mcp_hook, mock_history_service, sample_mcp_interaction):
@@ -230,7 +230,7 @@ class TestMCPListHistoryHook:
     @pytest.fixture
     def mock_history_service(self):
         """Mock history service."""
-        service = Mock(spec=HistoryService)
+        service = Mock(spec=SessionDataService)
         service.store_mcp_interaction = Mock(return_value=True)
         return service
     
@@ -254,7 +254,7 @@ class TestMCPListHistoryHook:
         """Test hook initializes correctly."""
         hook = MCPListHistoryHook(mock_history_service)
         assert hook.name == "mcp_list_history"
-        assert hook.history_service == mock_history_service
+        assert hook.session_data_service == mock_history_service
     
     @pytest.mark.asyncio
     async def test_execute_success(self, mcp_list_hook, mock_history_service, sample_mcp_list_interaction):
@@ -291,7 +291,7 @@ class TestStageExecutionHistoryHook:
     @pytest.fixture
     def mock_history_service(self):
         """Mock history service."""
-        service = Mock(spec=HistoryService)
+        service = Mock(spec=SessionDataService)
         service.create_stage_execution = AsyncMock(return_value="stage-exec-123")
         service.update_stage_execution = AsyncMock(return_value=True)
         return service
@@ -331,7 +331,7 @@ class TestStageExecutionHistoryHook:
         """Test hook initializes correctly."""
         hook = StageExecutionHistoryHook(mock_history_service)
         assert hook.name == "stage_history"
-        assert hook.history_service == mock_history_service
+        assert hook.session_data_service == mock_history_service
     
     @pytest.mark.asyncio
     async def test_execute_creates_new_stage(self, stage_hook, mock_history_service, new_stage_execution):

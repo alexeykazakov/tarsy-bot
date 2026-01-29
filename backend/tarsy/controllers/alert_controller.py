@@ -319,12 +319,12 @@ async def submit_alert(request: Request) -> AlertResponse:
             ) from e
         
         # Check queue size limit (if configured)
-        from tarsy.services.history_service import get_history_service
+        from tarsy.services.session_data import get_session_data_service
         
-        history_service = get_history_service()
+        session_data_service = get_session_data_service()
         if settings.max_queue_size is not None:
             pending_count = await asyncio.to_thread(
-                history_service.count_pending_sessions
+                session_data_service.count_pending_sessions
             )
             if pending_count >= settings.max_queue_size:
                 raise HTTPException(

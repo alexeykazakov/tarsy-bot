@@ -28,7 +28,7 @@ from tarsy.models.processing_context import (
 )
 from tarsy.models.unified_interactions import LLMInteraction
 from tarsy.services.agent_factory import AgentFactory
-from tarsy.services.history_service import HistoryService
+from tarsy.services.session_data import SessionDataService
 from tarsy.services.mcp_client_factory import MCPClientFactory
 from tarsy.utils.logger import get_module_logger
 from tarsy.utils.timestamp import now_us
@@ -54,7 +54,7 @@ class ChatService:
     
     def __init__(
         self,
-        history_service: HistoryService,
+        session_data_service: SessionDataService,
         agent_factory: AgentFactory,
         mcp_client_factory: MCPClientFactory
     ):
@@ -66,7 +66,7 @@ class ChatService:
             agent_factory: Factory for creating ChatAgent instances
             mcp_client_factory: Factory for creating session-scoped MCP clients
         """
-        self.history_service = history_service
+        self.session_data_service = session_data_service
         self.agent_factory = agent_factory
         self.mcp_client_factory = mcp_client_factory
         self.settings = get_settings()
@@ -98,7 +98,7 @@ class ChatService:
             ValueError: If session not found, not in terminal state, or chat disabled
         """
         # Get session and validate (wrap synchronous call in to_thread to avoid blocking)
-        session = await asyncio.to_thread(self.history_service.get_session, session_id)
+        session = await asyncio.to_thread(self.session_data_service.get_session, session_id)
         if not session:
             raise ValueError(f"Session {session_id} not found")
         
@@ -114,7 +114,7 @@ class ChatService:
             )
         
         # Check if chat already exists (via history_service)
-        existing_chat = await self.history_service.get_chat_by_session(session_id)
+        existing_chat = await self.session_data_service.get_chat_by_session(session_id)
         if existing_chat:
             logger.info(f"Chat already exists for session {session_id}")
             return existing_chat
@@ -144,7 +144,7 @@ class ChatService:
             context_captured_at_us=context.captured_at_us
         )
         
-        created_chat = await self.history_service.create_chat(chat)
+        created_chat = await self.session_data_service.create_chat(chat)
         logger.info(f"Created chat {created_chat.chat_id} for session {session_id}")
         
         # Publish chat created event
@@ -181,16 +181,16 @@ class ChatService:
                     await asyncio.sleep(5)  # Record every 5 seconds
                     # Record both session and chat interactions
                     # Update parent session timestamp (existing behavior)
-                    if hasattr(self.history_service, "record_session_interaction"):
-                        rec = self.history_service.record_session_interaction
+                    if hasattr(self.session_data_service, "record_session_interaction"):
+                        rec = self.session_data_service.record_session_interaction
                         if asyncio.iscoroutinefunction(rec):
                             await rec(session_id)
                         else:
                             await asyncio.to_thread(rec, session_id)
                     
                     # Update chat timestamp (keeps processing marker fresh)
-                    if hasattr(self.history_service, "record_chat_interaction"):
-                        rec_chat = self.history_service.record_chat_interaction
+                    if hasattr(self.session_data_service, "record_chat_interaction"):
+                        rec_chat = self.session_data_service.record_chat_interaction
                         if asyncio.iscoroutinefunction(rec_chat):
                             await rec_chat(chat_id)
                         else:
@@ -231,7 +231,7 @@ class ChatService:
             ValueError: If chat not found or validation fails
         """
         # 1. Get chat and validate (via history_service)
-        chat = await self.history_service.get_chat_by_id(chat_id)
+        chat = await self.session_data_service.get_chat_by_id(chat_id)
         if not chat:
             raise ValueError(f"Chat {chat_id} not found")
         
@@ -241,7 +241,7 @@ class ChatService:
             content=user_question,
             author=author
         )
-        await self.history_service.create_chat_user_message(user_msg)
+        await self.session_data_service.create_chat_user_message(user_msg)
         logger.info(f"Created chat message {user_msg.message_id} for chat {chat_id}")
         
         # Publish user message event
@@ -303,7 +303,7 @@ class ChatService:
         
         try:
             # 1. Get chat (already validated in create_user_message_and_start_processing)
-            chat = await self.history_service.get_chat_by_id(chat_id)
+            chat = await self.session_data_service.get_chat_by_id(chat_id)
             if not chat:
                 raise ValueError(f"Chat {chat_id} not found")
             
@@ -314,7 +314,7 @@ class ChatService:
             message_context = await self._build_message_context(chat, user_question)
             
             # 4. Determine iteration strategy, LLM provider, and chat agent from parent session's chain config
-            session = await asyncio.to_thread(self.history_service.get_session, chat.session_id)
+            session = await asyncio.to_thread(self.session_data_service.get_session, chat.session_id)
             if not session:
                 logger.warning(
                     f"Session {chat.session_id} not found when processing chat message. "
@@ -360,23 +360,23 @@ class ChatService:
                 )
             
             # Start chat message processing tracking (sets pod_id and last_interaction_at)
-            await self.history_service.start_chat_message_processing(chat_id, pod_id)
+            await self.session_data_service.start_chat_message_processing(chat_id, pod_id)
             
             logger.debug(f"Chat message {execution_id} being processed by pod {pod_id}")
             
             # 7. Record interaction timestamps for orphan detection
             # Both session (parent) and chat need their timestamps updated
             # Update parent session timestamp
-            if hasattr(self.history_service, "record_session_interaction"):
-                rec = self.history_service.record_session_interaction
+            if hasattr(self.session_data_service, "record_session_interaction"):
+                rec = self.session_data_service.record_session_interaction
                 if asyncio.iscoroutinefunction(rec):
                     await rec(chat.session_id)
                 else:
                     await asyncio.to_thread(rec, chat.session_id)
             
             # Update chat timestamp (keeps processing marker fresh)
-            if hasattr(self.history_service, "record_chat_interaction"):
-                rec_chat = self.history_service.record_chat_interaction
+            if hasattr(self.session_data_service, "record_chat_interaction"):
+                rec_chat = self.session_data_service.record_chat_interaction
                 if asyncio.iscoroutinefunction(rec_chat):
                     await rec_chat(chat_id)
                 else:
@@ -547,7 +547,7 @@ class ChatService:
         # Get formatted conversation using shared HistoryService method
         # Note: include_thinking=False (default) - chat doesn't need thinking_content
         get_conversation = partial(
-            self.history_service.get_formatted_session_conversation,
+            self.session_data_service.get_formatted_session_conversation,
             session_id=session_id,
             exclude_chat_stages=True,  # Only main investigation for initial chat context
             include_thinking=False  # Chat doesn't need thinking_content
@@ -555,7 +555,7 @@ class ChatService:
         history_text = await asyncio.to_thread(get_conversation)
         
         # Get session metadata
-        get_session = partial(self.history_service.get_session, session_id)
+        get_session = partial(self.session_data_service.get_session, session_id)
         session = await asyncio.to_thread(get_session)
         if not session:
             raise ValueError(
@@ -887,7 +887,7 @@ class ChatService:
         from tarsy.agents.prompts.builders import ChatExchange
         
         # Query ChatUserMessage records for chat_id (ordered by created_at_us)
-        user_messages = await self.history_service.get_chat_user_messages(
+        user_messages = await self.session_data_service.get_chat_user_messages(
             chat_id=chat_id, 
             limit=100,  # Reasonable limit
             offset=0
@@ -895,7 +895,7 @@ class ChatService:
         
         # Query stage executions once and map by chat_user_message_id
         # This avoids repeated DB calls and fixes issues with None started_at_us timestamps
-        chat_executions = await self.history_service.get_stage_executions_for_chat(chat_id)
+        chat_executions = await self.session_data_service.get_stage_executions_for_chat(chat_id)
         execution_map = {
             exec.chat_user_message_id: exec 
             for exec in chat_executions 
@@ -912,7 +912,7 @@ class ChatService:
                 continue
             
             # Get LLM interactions for this execution
-            llm_interactions = await self.history_service.get_llm_interactions_for_stage(
+            llm_interactions = await self.session_data_service.get_llm_interactions_for_stage(
                 matching_execution.execution_id
             )
             
@@ -998,7 +998,7 @@ class ChatService:
         Returns:
             List of StageExecution records for this chat
         """
-        return await self.history_service.get_stage_executions_for_chat(chat_id)
+        return await self.session_data_service.get_stage_executions_for_chat(chat_id)
     
     # Stage Execution Lifecycle Methods (similar to AlertService)
     
@@ -1014,7 +1014,7 @@ class ChatService:
         Raises:
             RuntimeError: If stage execution cannot be updated to started status
         """
-        if not self.history_service:
+        if not self.session_data_service:
             raise RuntimeError(
                 f"Cannot update stage execution {stage_execution_id} as started: History service is disabled. "
                 "All chat processing must be done with proper stage tracking."
@@ -1022,7 +1022,7 @@ class ChatService:
         
         try:
             # Get existing stage execution record
-            existing_stage = await self.history_service.get_stage_execution(stage_execution_id)
+            existing_stage = await self.session_data_service.get_stage_execution(stage_execution_id)
             if not existing_stage:
                 raise RuntimeError(
                     f"Stage execution {stage_execution_id} not found in database for start update. "
@@ -1070,7 +1070,7 @@ class ChatService:
         Raises:
             RuntimeError: If stage execution cannot be updated to completed status
         """
-        if not self.history_service:
+        if not self.session_data_service:
             raise RuntimeError(
                 f"Cannot update stage execution {stage_execution_id} as completed: History service is disabled. "
                 "All chat processing must be done with proper stage tracking."
@@ -1078,7 +1078,7 @@ class ChatService:
         
         try:
             # Get existing stage execution record
-            existing_stage = await self.history_service.get_stage_execution(stage_execution_id)
+            existing_stage = await self.session_data_service.get_stage_execution(stage_execution_id)
             if not existing_stage:
                 raise RuntimeError(
                     f"Stage execution {stage_execution_id} not found in database for completion update. "
@@ -1123,7 +1123,7 @@ class ChatService:
         Raises:
             RuntimeError: If stage execution cannot be updated to failed status
         """
-        if not self.history_service:
+        if not self.session_data_service:
             raise RuntimeError(
                 f"Cannot update stage execution {stage_execution_id} as failed: History service is disabled. "
                 "All chat processing must be done with proper stage tracking."
@@ -1131,7 +1131,7 @@ class ChatService:
         
         try:
             # Get existing stage execution record
-            existing_stage = await self.history_service.get_stage_execution(stage_execution_id)
+            existing_stage = await self.session_data_service.get_stage_execution(stage_execution_id)
             if not existing_stage:
                 raise RuntimeError(
                     f"Stage execution {stage_execution_id} not found in database for failure update. "
@@ -1188,7 +1188,7 @@ def get_chat_service() -> ChatService:
 
 
 def initialize_chat_service(
-    history_service: HistoryService,
+    session_data_service: SessionDataService,
     agent_factory: AgentFactory,
     mcp_client_factory: MCPClientFactory,
 ) -> ChatService:
@@ -1196,7 +1196,7 @@ def initialize_chat_service(
     Initialize global chat service instance.
     
     Args:
-        history_service: History service for database operations
+        session_data_service: Session data service for database operations
         agent_factory: Agent factory for creating ChatAgent
         mcp_client_factory: MCP client factory for creating session-scoped MCP clients
         
@@ -1205,7 +1205,7 @@ def initialize_chat_service(
     """
     global _chat_service
     _chat_service = ChatService(
-        history_service=history_service,
+        session_data_service=session_data_service,
         agent_factory=agent_factory,
         mcp_client_factory=mcp_client_factory,
     )

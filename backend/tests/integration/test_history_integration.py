@@ -25,7 +25,7 @@ from tarsy.models.unified_interactions import (
 
 # Import history models to ensure they're registered with SQLModel.metadata
 from tarsy.services.alert_service import AlertService
-from tarsy.services.history_service import HistoryService
+from tarsy.services.session_data import SessionDataService
 from tarsy.utils.timestamp import now_us
 from tests.conftest import alert_to_api_format
 
@@ -76,7 +76,7 @@ def create_test_context_and_chain(alert_type="kubernetes", session_id="test-sess
     return chain_context, chain_definition
 
 
-class TestHistoryServiceIntegration:
+class TestSessionDataServiceIntegration:
     """Integration tests for complete history service workflow."""
     
     @pytest.fixture
@@ -106,8 +106,8 @@ class TestHistoryServiceIntegration:
         mock_settings.database_url = "sqlite:///:memory:"
         mock_settings.history_retention_days = 90
         
-        with patch('tarsy.services.history_service.get_settings', return_value=mock_settings):
-            service = HistoryService()
+        with patch('tarsy.services.session_data.base_infrastructure.get_settings', return_value=mock_settings):
+            service = SessionDataService()
             
             # CRITICAL: Replace the DatabaseManager's engine with our test engine
             # that already has the tables created, to avoid separate in-memory databases
@@ -698,11 +698,11 @@ class TestAlertServiceHistoryIntegration:
         mock_history_service.update_session_current_stage = AsyncMock()
         # Mock database verification for stage creation
         mock_history_service._retry_database_operation_async = AsyncMock(return_value=True)
-        service.history_service = mock_history_service
+        service.session_data_service = mock_history_service
         
-        # Initialize manager classes with mocked history service
-        service.stage_manager = StageExecutionManager(service.history_service)
-        service.session_manager = SessionManager(service.history_service)
+        # Initialize manager classes with mocked session data service
+        service.stage_manager = StageExecutionManager(session_data_service=service.session_data_service)
+        service.session_manager = SessionManager(session_data_service=service.session_data_service)
         
         # Mock parallel executor
         service.parallel_executor = Mock()
@@ -747,8 +747,8 @@ class TestAlertServiceHistoryIntegration:
         # The result is a formatted string from _format_success_response, not a dict
         assert "Analysis completed successfully" in result or "Test analysis" in result
         
-        # Verify history service interactions
-        history_service = alert_service_with_history.history_service
+        # Verify session data service interactions
+        history_service = alert_service_with_history.session_data_service
         
         # Should have created session
         history_service.create_session.assert_called_once()
@@ -795,8 +795,8 @@ class TestAlertServiceHistoryIntegration:
         # The result is a formatted string from _format_error_response, not a dict  
         assert "Chain processing failed" in result or "Agent processing failed" in result  # Chain architecture error format
         
-        # Verify history service tracked the error
-        history_service = alert_service_with_history.history_service
+        # Verify session data service tracked the error
+        history_service = alert_service_with_history.session_data_service
         
         # Should have created session
         history_service.create_session.assert_called_once()
@@ -1269,7 +1269,7 @@ class TestDuplicatePreventionIntegration:
         
         # Create AlertService to test session creation
         alert_service = AlertService(get_settings())
-        alert_service.history_service = history_service_with_test_db
+        alert_service.session_data_service = history_service_with_test_db
         alert_service.agent_registry = Mock()
         alert_service.agent_registry.get_agent_for_alert_type.return_value = "TestAgent"
         
@@ -1504,8 +1504,8 @@ class TestDuplicatePreventionIntegration:
 class TestParallelStageHistoryIntegration:
     """Integration tests for parallel stage history operations."""
     
-    async def test_get_parallel_stage_children(self, history_service_with_test_db: HistoryService) -> None:
-        """Test HistoryService.get_parallel_stage_children() retrieves child stages correctly."""
+    async def test_get_parallel_stage_children(self, history_service_with_test_db: SessionDataService) -> None:
+        """Test SessionDataService.get_parallel_stage_children() retrieves child stages correctly."""
         from tarsy.models.agent_config import ChainConfigModel, ChainStageConfigModel
         from tarsy.models.alert import Alert, ProcessingAlert
         from tarsy.models.constants import ParallelType, StageStatus
@@ -1577,7 +1577,7 @@ class TestParallelStageHistoryIntegration:
             child_id = await history_service_with_test_db.create_stage_execution(child_stage)
             child_execution_ids.append(child_id)
         
-        # Test: Retrieve children using HistoryService method
+        # Test: Retrieve children using SessionDataService method
         children = await history_service_with_test_db.get_parallel_stage_children(parent_execution_id)
         
         # Assertions

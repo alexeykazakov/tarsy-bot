@@ -9,7 +9,7 @@ import asyncio
 from typing import Callable, Optional
 
 from tarsy.models.constants import AlertSessionStatus
-from tarsy.services.history_service import HistoryService
+from tarsy.services.session_data import SessionDataService
 from tarsy.utils.logger import get_logger
 
 logger = get_logger(__name__)
@@ -30,7 +30,7 @@ class SessionClaimWorker:
     
     def __init__(
         self,
-        history_service: HistoryService,
+        session_data_service: SessionDataService,
         max_global_concurrent: int,
         claim_interval: float,
         process_callback: Callable,
@@ -40,14 +40,14 @@ class SessionClaimWorker:
         Initialize SessionClaimWorker.
         
         Args:
-            history_service: HistoryService for database operations
+            session_data_service: SessionDataService for database operations
             max_global_concurrent: Maximum concurrent sessions across all pods
             claim_interval: Interval between claim attempts (seconds)
             process_callback: Callback function to process claimed sessions
                              Signature: async def process_callback(session_id: str, alert: ChainContext)
             pod_id: Pod identifier for this worker
         """
-        self.history_service = history_service
+        self.session_data_service = session_data_service
         self.max_global_concurrent = max_global_concurrent
         self.claim_interval = claim_interval
         self.process_callback = process_callback
@@ -171,7 +171,7 @@ class SessionClaimWorker:
         try:
             # Run blocking database operation in executor
             count = await asyncio.to_thread(
-                self.history_service.count_sessions_by_status,
+                self.session_data_service.count_sessions_by_status,
                 AlertSessionStatus.IN_PROGRESS.value
             )
             return count
@@ -189,7 +189,7 @@ class SessionClaimWorker:
         try:
             # Run blocking database operation in executor
             session = await asyncio.to_thread(
-                self.history_service.claim_next_pending_session,
+                self.session_data_service.claim_next_pending_session,
                 self.pod_id
             )
             
@@ -265,7 +265,7 @@ class SessionClaimWorker:
             try:
                 session_id = session_data.get("session_id")
                 if session_id:
-                    self.history_service.update_session_status(
+                    self.session_data_service.update_session_status(
                         session_id=session_id,
                         status=AlertSessionStatus.FAILED.value,
                         error_message=f"Failed to dispatch session: {str(e)}"

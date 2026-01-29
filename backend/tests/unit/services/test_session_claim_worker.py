@@ -14,7 +14,7 @@ pytestmark = pytest.mark.unit
 
 
 @pytest.fixture
-def mock_history_service():
+def mock_session_data_service():
     """Create a mock history service."""
     service = MagicMock()
     service.repository = MagicMock()
@@ -29,10 +29,10 @@ def mock_process_callback():
 
 
 @pytest.fixture
-def worker(mock_history_service, mock_process_callback):
+def worker(mock_session_data_service, mock_process_callback):
     """Create SessionClaimWorker instance."""
     return SessionClaimWorker(
-        history_service=mock_history_service,
+        session_data_service=mock_session_data_service,
         max_global_concurrent=5,
         claim_interval=0.1,  # Fast interval for testing
         process_callback=mock_process_callback,
@@ -61,14 +61,14 @@ async def test_worker_double_start(worker, caplog):
 
 
 @pytest.mark.asyncio
-async def test_worker_has_capacity_true(mock_history_service, mock_process_callback):
+async def test_worker_has_capacity_true(mock_session_data_service, mock_process_callback):
     """Test capacity check when slots are available."""
-    # Configure mock on history_service, not repository
-    mock_history_service.count_sessions_by_status.return_value = 3
+    # Configure mock on session_data_service, not repository
+    mock_session_data_service.count_sessions_by_status.return_value = 3
     
     # Create worker with pre-configured mock
     worker = SessionClaimWorker(
-        history_service=mock_history_service,
+        session_data_service=mock_session_data_service,
         max_global_concurrent=5,
         claim_interval=0.1,
         process_callback=mock_process_callback,
@@ -81,9 +81,9 @@ async def test_worker_has_capacity_true(mock_history_service, mock_process_callb
 
 
 @pytest.mark.asyncio
-async def test_worker_has_capacity_false(worker, mock_history_service):
+async def test_worker_has_capacity_false(worker, mock_session_data_service):
     """Test capacity check when at max capacity."""
-    mock_history_service.count_sessions_by_status.return_value = 5
+    mock_session_data_service.count_sessions_by_status.return_value = 5
     
     has_capacity = await worker._has_capacity()
     
@@ -91,14 +91,14 @@ async def test_worker_has_capacity_false(worker, mock_history_service):
 
 
 @pytest.mark.asyncio
-async def test_worker_count_active_sessions(mock_history_service, mock_process_callback):
+async def test_worker_count_active_sessions(mock_session_data_service, mock_process_callback):
     """Test counting active sessions."""
-    # Configure mock on history_service, not repository
-    mock_history_service.count_sessions_by_status.return_value = 3
+    # Configure mock on session_data_service, not repository
+    mock_session_data_service.count_sessions_by_status.return_value = 3
     
     # Create worker with pre-configured mock
     worker = SessionClaimWorker(
-        history_service=mock_history_service,
+        session_data_service=mock_session_data_service,
         max_global_concurrent=5,
         claim_interval=0.1,
         process_callback=mock_process_callback,
@@ -111,7 +111,7 @@ async def test_worker_count_active_sessions(mock_history_service, mock_process_c
 
 
 @pytest.mark.asyncio
-async def test_worker_claim_next_session_success(mock_history_service, mock_process_callback):
+async def test_worker_claim_next_session_success(mock_session_data_service, mock_process_callback):
     """Test successful session claiming."""
     # Create a proper mock session object with all required attributes
     mock_session = MagicMock()
@@ -124,12 +124,12 @@ async def test_worker_claim_next_session_success(mock_history_service, mock_proc
     mock_session.session_metadata = None
     mock_session.started_at_us = 1234567890
     
-    # Configure mock on history_service, not repository
-    mock_history_service.claim_next_pending_session.return_value = mock_session
+    # Configure mock on session_data_service, not repository
+    mock_session_data_service.claim_next_pending_session.return_value = mock_session
     
     # Create worker with pre-configured mock
     worker = SessionClaimWorker(
-        history_service=mock_history_service,
+        session_data_service=mock_session_data_service,
         max_global_concurrent=5,
         claim_interval=0.1,
         process_callback=mock_process_callback,
@@ -145,14 +145,14 @@ async def test_worker_claim_next_session_success(mock_history_service, mock_proc
 
 
 @pytest.mark.asyncio
-async def test_worker_claim_next_session_none(mock_history_service, mock_process_callback):
+async def test_worker_claim_next_session_none(mock_session_data_service, mock_process_callback):
     """Test claiming when no pending sessions available."""
-    # Configure mock on history_service, not repository
-    mock_history_service.claim_next_pending_session.return_value = None
+    # Configure mock on session_data_service, not repository
+    mock_session_data_service.claim_next_pending_session.return_value = None
     
     # Create worker with pre-configured mock
     worker = SessionClaimWorker(
-        history_service=mock_history_service,
+        session_data_service=mock_session_data_service,
         max_global_concurrent=5,
         claim_interval=0.1,
         process_callback=mock_process_callback,
@@ -165,11 +165,11 @@ async def test_worker_claim_next_session_none(mock_history_service, mock_process
 
 
 @pytest.mark.asyncio
-async def test_worker_dispatch_session(mock_history_service, mock_process_callback):
+async def test_worker_dispatch_session(mock_session_data_service, mock_process_callback):
     """Test dispatching a claimed session."""
     # Create worker
     worker = SessionClaimWorker(
-        history_service=mock_history_service,
+        session_data_service=mock_session_data_service,
         max_global_concurrent=5,
         claim_interval=0.1,
         process_callback=mock_process_callback,
@@ -195,7 +195,7 @@ async def test_worker_dispatch_session(mock_history_service, mock_process_callba
 
 
 @pytest.mark.asyncio
-async def test_worker_dispatch_session_error_handling(worker, mock_history_service):
+async def test_worker_dispatch_session_error_handling(worker, mock_session_data_service):
     """Test dispatch error handling."""
     session_data = {
         "session_id": "test-session-123",
@@ -207,14 +207,14 @@ async def test_worker_dispatch_session_error_handling(worker, mock_history_servi
     await worker._dispatch_session(session_data)
     
     # Verify session was marked as failed
-    mock_history_service.update_session_status.assert_called_once()
-    call_args = mock_history_service.update_session_status.call_args
+    mock_session_data_service.update_session_status.assert_called_once()
+    call_args = mock_session_data_service.update_session_status.call_args
     assert call_args[1]["session_id"] == "test-session-123"
     assert call_args[1]["status"] == AlertSessionStatus.FAILED.value
 
 
 @pytest.mark.asyncio
-async def test_worker_claim_loop_with_capacity(mock_history_service, mock_process_callback):
+async def test_worker_claim_loop_with_capacity(mock_session_data_service, mock_process_callback):
     """Test claim loop when capacity is available and session is claimed."""
     mock_session = MagicMock()
     mock_session.session_id = "test-session-123"
@@ -227,15 +227,15 @@ async def test_worker_claim_loop_with_capacity(mock_history_service, mock_proces
     mock_session.started_at_us = 1234567890
     
     # Configure mocks on history_service - has capacity, has pending session (then none to stop loop)
-    mock_history_service.count_sessions_by_status.return_value = 2
-    mock_history_service.claim_next_pending_session.side_effect = [
+    mock_session_data_service.count_sessions_by_status.return_value = 2
+    mock_session_data_service.claim_next_pending_session.side_effect = [
         mock_session,
         None
     ]
     
     # Create worker with pre-configured mock
     worker = SessionClaimWorker(
-        history_service=mock_history_service,
+        session_data_service=mock_session_data_service,
         max_global_concurrent=5,
         claim_interval=0.1,
         process_callback=mock_process_callback,
@@ -252,14 +252,14 @@ async def test_worker_claim_loop_with_capacity(mock_history_service, mock_proces
     await worker.stop()
     
     # Verify session was claimed and dispatched
-    assert mock_history_service.claim_next_pending_session.call_count >= 1
+    assert mock_session_data_service.claim_next_pending_session.call_count >= 1
 
 
 @pytest.mark.asyncio
-async def test_worker_claim_loop_no_capacity(worker, mock_history_service):
+async def test_worker_claim_loop_no_capacity(worker, mock_session_data_service):
     """Test claim loop when at capacity."""
     # No capacity
-    mock_history_service.count_sessions_by_status.return_value = 5
+    mock_session_data_service.count_sessions_by_status.return_value = 5
     
     # Start worker
     await worker.start()
@@ -271,18 +271,18 @@ async def test_worker_claim_loop_no_capacity(worker, mock_history_service):
     await worker.stop()
     
     # Verify no sessions were claimed
-    mock_history_service.claim_next_pending_session.assert_not_called()
+    mock_session_data_service.claim_next_pending_session.assert_not_called()
 
 
 @pytest.mark.asyncio
-async def test_worker_claim_loop_error_handling(mock_history_service, mock_process_callback, caplog):
+async def test_worker_claim_loop_error_handling(mock_session_data_service, mock_process_callback, caplog):
     """Test claim loop handles errors gracefully."""
     # Configure mock on history_service to raise error in capacity check
-    mock_history_service.count_sessions_by_status.side_effect = Exception("Database error")
+    mock_session_data_service.count_sessions_by_status.side_effect = Exception("Database error")
     
     # Create worker with pre-configured mock
     worker = SessionClaimWorker(
-        history_service=mock_history_service,
+        session_data_service=mock_session_data_service,
         max_global_concurrent=5,
         claim_interval=0.1,
         process_callback=mock_process_callback,
@@ -303,10 +303,10 @@ async def test_worker_claim_loop_error_handling(mock_history_service, mock_proce
 
 
 @pytest.mark.asyncio
-async def test_worker_stop_timeout(worker, mock_history_service):
+async def test_worker_stop_timeout(worker, mock_session_data_service):
     """Test worker stop with timeout."""
     # Simulate stuck claim loop
-    mock_history_service.count_sessions_by_status.return_value = 0
+    mock_session_data_service.count_sessions_by_status.return_value = 0
     
     await worker.start()
     

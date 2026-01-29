@@ -59,7 +59,7 @@ class TestAlertServiceResumePausedSession:
         with patch('tarsy.services.alert_service.RunbookService'):
             alert_service = AlertService(settings=mock_settings)
         
-        alert_service.history_service = mock_history_service
+        alert_service.session_data_service = mock_history_service
         alert_service.runbook_service = MagicMock()
         alert_service.runbook_service.download_runbook = AsyncMock(return_value="# Default runbook")
         
@@ -157,7 +157,7 @@ class TestAlertServiceResumePausedSession:
         with patch('tarsy.services.alert_service.RunbookService'):
             alert_service = AlertService(settings=mock_settings)
         
-        alert_service.history_service = mock_history_service
+        alert_service.session_data_service = mock_history_service
         
         with pytest.raises(Exception, match="Session .* not found"):
             await alert_service.resume_paused_session(session_id)
@@ -179,7 +179,7 @@ class TestAlertServiceResumePausedSession:
         with patch('tarsy.services.alert_service.RunbookService'):
             alert_service = AlertService(settings=mock_settings)
         
-        alert_service.history_service = mock_history_service
+        alert_service.session_data_service = mock_history_service
         
         with pytest.raises(Exception, match="is not paused"):
             await alert_service.resume_paused_session(session_id)
@@ -206,7 +206,7 @@ class TestAlertServiceResumePausedSession:
         with patch('tarsy.services.alert_service.RunbookService'):
             alert_service = AlertService(settings=mock_settings)
         
-        alert_service.history_service = mock_history_service
+        alert_service.session_data_service = mock_history_service
         
         with pytest.raises(Exception, match="No paused stage found"):
             await alert_service.resume_paused_session(session_id)
@@ -264,7 +264,7 @@ class TestAlertServiceResumePausedSession:
         with patch('tarsy.services.alert_service.RunbookService'):
             alert_service = AlertService(settings=mock_settings)
         
-        alert_service.history_service = mock_history_service
+        alert_service.session_data_service = mock_history_service
         alert_service.session_manager.update_session_status = MagicMock()
         
         # Mock final_analysis_summarizer (not used in this test, but needs to exist)
@@ -337,7 +337,7 @@ class TestAlertServiceResumePausedSession:
         with patch('tarsy.services.alert_service.RunbookService'):
             alert_service = AlertService(settings=mock_settings)
         
-        alert_service.history_service = mock_history_service
+        alert_service.session_data_service = mock_history_service
         alert_service.session_manager.update_session_status = MagicMock()
         
         # Mock final_analysis_summarizer (not used for PAUSED status)
@@ -408,7 +408,7 @@ class TestAlertServiceResumePausedSession:
         with patch('tarsy.services.alert_service.RunbookService'):
             alert_service = AlertService(settings=mock_settings)
         
-        alert_service.history_service = mock_history_service
+        alert_service.session_data_service = mock_history_service
         alert_service.session_manager.update_session_status = MagicMock()
         
         # Mock final_analysis_summarizer (not used for PAUSED status)
@@ -453,7 +453,7 @@ class TestAlertServiceResumePausedSession:
         with patch('tarsy.services.alert_service.RunbookService'):
             alert_service = AlertService(settings=mock_settings)
         
-        alert_service.history_service = None
+        alert_service.session_data_service = None
         
         with pytest.raises(Exception, match="History service not available"):
             await alert_service.resume_paused_session("test-session")
@@ -493,7 +493,7 @@ class TestAlertServiceResumePausedSession:
         with patch('tarsy.services.alert_service.RunbookService'):
             alert_service = AlertService(settings=mock_settings)
         
-        alert_service.history_service = mock_history_service
+        alert_service.session_data_service = mock_history_service
         alert_service.runbook_service = MagicMock()
         alert_service.runbook_service.download_runbook = AsyncMock(return_value="# Default runbook")
         alert_service.session_manager.update_session_status = MagicMock()

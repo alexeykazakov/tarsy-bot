@@ -75,7 +75,7 @@ class TestCancelAgentValidation:
         
         with patch('tarsy.services.alert_service.RunbookService'):
             service = AlertService(settings=mock_settings)
-        service.history_service = MagicMock()
+        service.session_data_service = MagicMock()
         service.session_manager = MagicMock()
         service.parallel_executor = MagicMock()
         return service
@@ -85,7 +85,7 @@ class TestCancelAgentValidation:
         self, alert_service: AlertService
     ) -> None:
         """Test cancel_agent raises error when history service unavailable."""
-        alert_service.history_service = None
+        alert_service.session_data_service = None
 
         with pytest.raises(ValueError, match="History service not available"):
             await alert_service.cancel_agent("session-123", "stage-exec-1")
@@ -185,7 +185,7 @@ class TestCancelAgentStatusUpdate:
         
         with patch('tarsy.services.alert_service.RunbookService'):
             service = AlertService(settings=mock_settings)
-        service.history_service = MagicMock()
+        service.session_data_service = MagicMock()
         service.session_manager = MagicMock()
         service.parallel_executor = MagicMock()
         return service
@@ -347,7 +347,7 @@ class TestCancelAgentPolicyEvaluation:
         
         with patch('tarsy.services.alert_service.RunbookService'):
             service = AlertService(settings=mock_settings)
-        service.history_service = MagicMock()
+        service.session_data_service = MagicMock()
         service.session_manager = MagicMock()
         service.parallel_executor = MagicMock()
         return service
@@ -549,7 +549,7 @@ class TestCancelAgentMixedStatuses:
         
         with patch('tarsy.services.alert_service.RunbookService'):
             service = AlertService(settings=mock_settings)
-        service.history_service = MagicMock()
+        service.session_data_service = MagicMock()
         service.session_manager = MagicMock()
         service.parallel_executor = MagicMock()
         return service

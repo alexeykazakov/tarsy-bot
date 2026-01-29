@@ -17,7 +17,7 @@ from tarsy.controllers.history_controller import (
 )
 from tarsy.models.constants import AlertSessionStatus
 from tarsy.models.db_models import AlertSession
-from tarsy.services.history_service import get_history_service
+from tarsy.services.session_data import get_session_data_service
 from tarsy.utils.timestamp import now_us
 from tests.utils import MockFactory
 
@@ -65,7 +65,7 @@ class TestCancelSessionEndpoint:
         mock_history_service.update_session_to_canceling.return_value = (True, AlertSessionStatus.CANCELING.value)
 
         # Override dependency
-        app.dependency_overrides[get_history_service] = lambda: mock_history_service
+        app.dependency_overrides[get_session_data_service] = lambda: mock_history_service
 
         # Mock event publishing and background task check function
         with patch('tarsy.services.events.event_helpers.publish_cancel_request', new_callable=AsyncMock) as mock_publish:
@@ -92,7 +92,7 @@ class TestCancelSessionEndpoint:
 
         mock_history_service.get_session.return_value = None
 
-        app.dependency_overrides[get_history_service] = lambda: mock_history_service
+        app.dependency_overrides[get_session_data_service] = lambda: mock_history_service
 
         response = client.post(f"/api/v1/history/sessions/{session_id}/cancel")
 
@@ -130,7 +130,7 @@ class TestCancelSessionEndpoint:
         # Mock update returns False for terminal status
         mock_history_service.update_session_to_canceling.return_value = (False, terminal_status)
         
-        app.dependency_overrides[get_history_service] = lambda: mock_history_service
+        app.dependency_overrides[get_session_data_service] = lambda: mock_history_service
         
         # Mock event publishing and background task to avoid import errors
         with patch('tarsy.services.events.event_helpers.publish_cancel_request', new_callable=AsyncMock):
@@ -162,7 +162,7 @@ class TestCancelSessionEndpoint:
         # Mock update returns success (idempotent)
         mock_history_service.update_session_to_canceling.return_value = (True, AlertSessionStatus.CANCELING.value)
         
-        app.dependency_overrides[get_history_service] = lambda: mock_history_service
+        app.dependency_overrides[get_session_data_service] = lambda: mock_history_service
         
         # Mock both event publishing and background task to prevent hanging
         with patch('tarsy.services.events.event_helpers.publish_cancel_request', new_callable=AsyncMock):
@@ -193,7 +193,7 @@ class TestCancelSessionEndpoint:
         mock_history_service.get_session.return_value = mock_session
         mock_history_service.cancel_all_paused_stages = AsyncMock(return_value=2)
         
-        app.dependency_overrides[get_history_service] = lambda: mock_history_service
+        app.dependency_overrides[get_session_data_service] = lambda: mock_history_service
         
         with patch('tarsy.services.events.event_helpers.publish_session_cancelled', new_callable=AsyncMock) as mock_cancelled:
             response = client.post(f"/api/v1/history/sessions/{session_id}/cancel")
@@ -232,7 +232,7 @@ class TestCancelSessionEndpoint:
         mock_history_service.get_session.return_value = mock_session
         mock_history_service.cancel_all_paused_stages = AsyncMock(return_value=3)  # 3 stages cancelled
         
-        app.dependency_overrides[get_history_service] = lambda: mock_history_service
+        app.dependency_overrides[get_session_data_service] = lambda: mock_history_service
         
         with patch('tarsy.services.events.event_helpers.publish_session_cancelled', new_callable=AsyncMock):
             response = client.post(f"/api/v1/history/sessions/{session_id}/cancel")
@@ -260,7 +260,7 @@ class TestCancelSessionEndpoint:
         mock_history_service.get_session.return_value = mock_session
         mock_history_service.cancel_all_paused_stages = AsyncMock(return_value=1)
         
-        app.dependency_overrides[get_history_service] = lambda: mock_history_service
+        app.dependency_overrides[get_session_data_service] = lambda: mock_history_service
         
         with patch('tarsy.services.events.event_helpers.publish_session_cancelled', new_callable=AsyncMock) as mock_event:
             response = client.post(f"/api/v1/history/sessions/{session_id}/cancel")

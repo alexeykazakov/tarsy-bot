@@ -12,7 +12,7 @@ import logging
 from tarsy.hooks.hook_context import BaseHook, _apply_llm_interaction_truncation
 from tarsy.models.db_models import StageExecution
 from tarsy.models.unified_interactions import LLMInteraction, MCPInteraction
-from tarsy.services.history_service import HistoryService
+from tarsy.services.session_data import SessionDataService
 
 logger = logging.getLogger(__name__)
 
@@ -21,12 +21,12 @@ class LLMHistoryHook(BaseHook[LLMInteraction]):
     """
     Typed hook for logging LLM interactions to history database.
     
-    Receives unified LLMInteraction and stores it using HistoryService.
+    Receives unified LLMInteraction and stores it using SessionDataService.
     """
     
-    def __init__(self, history_service: HistoryService):
+    def __init__(self, session_data_service: SessionDataService):
         super().__init__("llm_history")
-        self.history_service = history_service
+        self.session_data_service = session_data_service
 
     async def execute(self, interaction: LLMInteraction) -> None:
         """Log LLM interaction to history database with content truncation."""
@@ -35,7 +35,7 @@ class LLMHistoryHook(BaseHook[LLMInteraction]):
             truncated_interaction = _apply_llm_interaction_truncation(interaction)
             
             ok = await asyncio.to_thread(
-                self.history_service.store_llm_interaction, truncated_interaction
+                self.session_data_service.store_llm_interaction, truncated_interaction
             )
             if ok:
                 logger.debug(
@@ -44,7 +44,7 @@ class LLMHistoryHook(BaseHook[LLMInteraction]):
                 
                 # Update last interaction timestamp for orphan detection (non-blocking)
                 if interaction.session_id:
-                    rec = self.history_service.record_session_interaction
+                    rec = self.session_data_service.record_session_interaction
                     # If async, await directly; if sync, offload to thread
                     if asyncio.iscoroutinefunction(rec):
                         await rec(interaction.session_id)
@@ -52,7 +52,7 @@ class LLMHistoryHook(BaseHook[LLMInteraction]):
                         await asyncio.to_thread(rec, interaction.session_id)
             else:
                 logger.warning(
-                    f"History service returned False for LLM interaction {interaction.interaction_id}"
+                    f"Session data service returned False for LLM interaction {interaction.interaction_id}"
                 )
             
         except Exception as e:
@@ -64,12 +64,12 @@ class MCPHistoryHook(BaseHook[MCPInteraction]):
     """
     Typed hook for logging MCP tool interactions to history database.
     
-    Receives unified MCPInteraction and stores it using HistoryService.
+    Receives unified MCPInteraction and stores it using SessionDataService.
     """
     
-    def __init__(self, history_service: HistoryService):
+    def __init__(self, session_data_service: SessionDataService):
         super().__init__("mcp_history")
-        self.history_service = history_service
+        self.session_data_service = session_data_service
 
     async def execute(self, interaction: MCPInteraction) -> None:
         """
@@ -80,7 +80,7 @@ class MCPHistoryHook(BaseHook[MCPInteraction]):
         """
         try:
             ok = await asyncio.to_thread(
-                self.history_service.store_mcp_interaction, interaction
+                self.session_data_service.store_mcp_interaction, interaction
             )
             if ok:
                 logger.debug(
@@ -89,7 +89,7 @@ class MCPHistoryHook(BaseHook[MCPInteraction]):
                 
                 # Update last interaction timestamp for orphan detection (non-blocking)
                 if interaction.session_id:
-                    rec = self.history_service.record_session_interaction
+                    rec = self.session_data_service.record_session_interaction
                     # If async, await directly; if sync, offload to thread
                     if asyncio.iscoroutinefunction(rec):
                         await rec(interaction.session_id)
@@ -97,7 +97,7 @@ class MCPHistoryHook(BaseHook[MCPInteraction]):
                         await asyncio.to_thread(rec, interaction.session_id)
             else:
                 logger.warning(
-                    f"History service returned False for MCP interaction {interaction.request_id}"
+                    f"Session data service returned False for MCP interaction {interaction.request_id}"
                 )
             
         except Exception as e:
@@ -109,12 +109,12 @@ class MCPListHistoryHook(BaseHook[MCPInteraction]):
     """
     Typed hook for logging MCP tool list operations to history database.
     
-    Receives unified MCPInteraction and stores it using HistoryService.
+    Receives unified MCPInteraction and stores it using SessionDataService.
     """
     
-    def __init__(self, history_service: HistoryService):
+    def __init__(self, session_data_service: SessionDataService):
         super().__init__("mcp_list_history")
-        self.history_service = history_service
+        self.session_data_service = session_data_service
 
     async def execute(self, interaction: MCPInteraction) -> None:
         """
@@ -125,7 +125,7 @@ class MCPListHistoryHook(BaseHook[MCPInteraction]):
         """
         try:
             ok = await asyncio.to_thread(
-                self.history_service.store_mcp_interaction, interaction
+                self.session_data_service.store_mcp_interaction, interaction
             )
             if ok:
                 logger.debug(
@@ -145,12 +145,12 @@ class StageExecutionHistoryHook(BaseHook[StageExecution]):
     """
     Typed hook for logging stage execution events to history database.
     
-    Receives StageExecution and creates/updates it using HistoryService.
+    Receives StageExecution and creates/updates it using SessionDataService.
     """
     
-    def __init__(self, history_service: HistoryService):
+    def __init__(self, session_data_service: SessionDataService):
         super().__init__("stage_history")
-        self.history_service = history_service
+        self.session_data_service = session_data_service
 
     async def execute(self, stage_execution: StageExecution) -> None:
         """
@@ -168,14 +168,14 @@ class StageExecutionHistoryHook(BaseHook[StageExecution]):
             if stage_execution.started_at_us is None:
                 # This is a new stage execution being created
                 logger.debug(f"Creating stage execution {stage_execution.execution_id} for stage '{stage_execution.stage_name}' (parallel_index={stage_execution.parallel_index}, parent={stage_execution.parent_stage_execution_id})")
-                execution_id = await self.history_service.create_stage_execution(stage_execution)
+                execution_id = await self.session_data_service.create_stage_execution(stage_execution)
                 logger.info(f"Created stage execution {execution_id} in history for stage '{stage_execution.stage_name}'")
             else:
                 # This is an update to an existing stage execution (has started/completed times)
-                success = await self.history_service.update_stage_execution(stage_execution)
+                success = await self.session_data_service.update_stage_execution(stage_execution)
                 if not success:
                     logger.warning(f"Update failed for stage execution {stage_execution.execution_id}, attempting fallback creation")
-                    execution_id = await self.history_service.create_stage_execution(stage_execution)
+                    execution_id = await self.session_data_service.create_stage_execution(stage_execution)
                     logger.info(f"Created (via fallback) stage execution {execution_id} in history")
                 else:
                     logger.debug(f"Updated stage execution {stage_execution.execution_id} in history")

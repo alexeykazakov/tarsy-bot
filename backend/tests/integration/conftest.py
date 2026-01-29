@@ -30,7 +30,7 @@ from tarsy.models.unified_interactions import (
 )
 from tarsy.services.agent_factory import AgentFactory
 from tarsy.services.alert_service import AlertService
-from tarsy.services.history_service import HistoryService
+from tarsy.services.session_data import SessionDataService
 from tarsy.services.mcp_server_registry import MCPServerRegistry
 from tarsy.services.runbook_service import RunbookService
 from tarsy.utils.timestamp import now_us
@@ -114,13 +114,13 @@ def ensure_integration_test_isolation(mock_settings, monkeypatch):
     
     This fixture is now opt-in - tests that need this isolation must explicitly use it.
     """
-    # CRITICAL: Reset the global history service singleton to prevent e2e contamination
-    import tarsy.services.history_service
-    original_history_service = getattr(tarsy.services.history_service, '_history_service', None)
+    # CRITICAL: Reset the global session data service singleton to prevent e2e contamination
+    import tarsy.services.session_data
+    original_session_data_service = getattr(tarsy.services.session_data, '_session_data_service', None)
     
     # Only reset if it exists and is initialized
-    if original_history_service is not None:
-        tarsy.services.history_service._history_service = None
+    if original_session_data_service is not None:
+        tarsy.services.session_data._session_data_service = None
     
     # Force patch the settings globally for every integration test
     monkeypatch.setattr("tarsy.config.settings.get_settings", lambda: mock_settings)
@@ -133,9 +133,9 @@ def ensure_integration_test_isolation(mock_settings, monkeypatch):
     
     yield
     
-    # Restore the original history service state only if we modified it
-    if original_history_service is not None:
-        tarsy.services.history_service._history_service = original_history_service
+    # Restore the original session data service state only if we modified it
+    if original_session_data_service is not None:
+        tarsy.services.session_data._session_data_service = original_session_data_service
 
 
 @pytest.fixture
@@ -911,8 +911,8 @@ async def alert_service(ensure_integration_test_isolation, mock_settings, mock_r
     service.agent_factory = mock_agent_factory
     
     # Mock history service for stage execution verification
-    from tarsy.services.history_service import HistoryService
-    mock_history_service = Mock(spec=HistoryService)
+    from tarsy.services.session_data import SessionDataService
+    mock_history_service = Mock(spec=SessionDataService)
     mock_history_service.create_session.return_value = "test-session-id"
     mock_history_service.update_session_status = Mock()
     mock_history_service.complete_session = Mock()
@@ -955,13 +955,13 @@ async def alert_service(ensure_integration_test_isolation, mock_settings, mock_r
         return result
     mock_history_service._retry_database_operation_async = mock_retry_db_operation
     
-    service.history_service = mock_history_service
+    service.session_data_service = mock_history_service
     
-    # Update manager classes with mocked history service
+    # Update manager classes with mocked session data service
     from tarsy.services.session_manager import SessionManager
     from tarsy.services.stage_execution_manager import StageExecutionManager
-    service.stage_manager = StageExecutionManager(history_service=mock_history_service)
-    service.session_manager = SessionManager(history_service=mock_history_service)
+    service.stage_manager = StageExecutionManager(session_data_service=mock_history_service)
+    service.session_manager = SessionManager(session_data_service=mock_history_service)
     
     # Update parallel executor with new stage manager
     from tarsy.services.parallel_stage_executor import ParallelStageExecutor
@@ -1012,7 +1012,7 @@ def alert_service_with_mocks(
     service.final_analysis_summarizer = mock_summary
     
     # Create mock history service for proper testing
-    mock_history_service = Mock(spec=HistoryService)
+    mock_history_service = Mock(spec=SessionDataService)
     mock_history_service.create_session.return_value = "test-session-id"
     mock_history_service.update_session_status = Mock()
     mock_history_service.complete_session = Mock()
@@ -1049,13 +1049,13 @@ def alert_service_with_mocks(
         return True
     mock_history_service._retry_database_operation_async = mock_retry_operation
     
-    service.history_service = mock_history_service
+    service.session_data_service = mock_history_service
     
-    # Initialize manager classes AFTER all history_service mocks are set up
+    # Initialize manager classes AFTER all session_data_service mocks are set up
     from tarsy.services.session_manager import SessionManager
     from tarsy.services.stage_execution_manager import StageExecutionManager
-    service.stage_manager = StageExecutionManager(mock_history_service)
-    service.session_manager = SessionManager(mock_history_service)
+    service.stage_manager = StageExecutionManager(session_data_service=mock_history_service)
+    service.session_manager = SessionManager(session_data_service=mock_history_service)
     
     # Mock stage_manager.create_stage_execution to bypass database verification
     # These integration tests don't need to test the actual database verification logic
@@ -1128,7 +1128,7 @@ def test_session_factory(history_test_database_engine):
 @pytest.fixture
 def mock_history_service():
     """Create mock history service for testing."""
-    service = Mock(spec=HistoryService)
+    service = Mock(spec=SessionDataService)
     service.enabled = True
     service.is_enabled = True
     service.create_session.return_value = "mock-session-123"
@@ -1220,21 +1220,21 @@ def datetime_now_utc():
 
 @pytest.fixture
 def history_service_with_test_db(history_test_database_engine):
-    """Create HistoryService with test database engine."""
+    """Create SessionDataService with test database engine."""
     from unittest.mock import patch
 
     from sqlalchemy.orm import sessionmaker
 
     from tarsy.repositories.base_repository import DatabaseManager
-    from tarsy.services.history_service import HistoryService
+    from tarsy.services.session_data import SessionDataService
     
     # Mock settings for history service
     mock_settings = Mock()
     mock_settings.database_url = "sqlite:///:memory:"
     mock_settings.history_retention_days = 90
     
-    with patch('tarsy.services.history_service.get_settings', return_value=mock_settings):
-        service = HistoryService()
+    with patch('tarsy.services.session_data.base_infrastructure.get_settings', return_value=mock_settings):
+        service = SessionDataService()
         
         # CRITICAL: Replace the DatabaseManager's engine with our test engine
         # that already has the tables created, to avoid separate in-memory databases

@@ -12,8 +12,9 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from tarsy.controllers.history_controller import HistoryService, router
-from tarsy.services.history_service import get_history_service
+from tarsy.controllers.history_controller import router
+from tarsy.services.session_data import SessionDataService
+from tarsy.services.session_data import get_session_data_service
 from tarsy.utils.timestamp import now_us
 
 
@@ -94,7 +95,7 @@ class TestHistoryControllerEndpoints:
         mock_history_service.get_sessions_list.return_value = paginated_sessions
         
         # Override FastAPI dependency
-        app.dependency_overrides[get_history_service] = lambda: mock_history_service
+        app.dependency_overrides[get_session_data_service] = lambda: mock_history_service
         
         response = client.get("/api/v1/history/sessions")
         
@@ -133,7 +134,7 @@ class TestHistoryControllerEndpoints:
         mock_history_service.get_sessions_list.return_value = empty_paginated
         
         # Override FastAPI dependency
-        app.dependency_overrides[get_history_service] = lambda: mock_history_service
+        app.dependency_overrides[get_session_data_service] = lambda: mock_history_service
         
         response = client.get(
             "/api/v1/history/sessions",
@@ -175,7 +176,7 @@ class TestHistoryControllerEndpoints:
         mock_history_service.get_sessions_list.return_value = empty_paginated
         
         # Override FastAPI dependency
-        app.dependency_overrides[get_history_service] = lambda: mock_history_service
+        app.dependency_overrides[get_session_data_service] = lambda: mock_history_service
         
         response = client.get(
             "/api/v1/history/sessions",
@@ -207,7 +208,7 @@ class TestHistoryControllerEndpoints:
         mock_history_service.get_sessions_list.return_value = empty_paginated
         
         # Override FastAPI dependency
-        app.dependency_overrides[get_history_service] = lambda: mock_history_service
+        app.dependency_overrides[get_session_data_service] = lambda: mock_history_service
         
         response = client.get(
             "/api/v1/history/sessions",
@@ -259,7 +260,7 @@ class TestHistoryControllerEndpoints:
         mock_history_service.get_sessions_list.return_value = paginated_sessions
         
         # Override FastAPI dependency
-        app.dependency_overrides[get_history_service] = lambda: mock_history_service
+        app.dependency_overrides[get_session_data_service] = lambda: mock_history_service
         
         response = client.get(
             "/api/v1/history/sessions",
@@ -315,7 +316,7 @@ class TestHistoryControllerEndpoints:
         mock_history_service.get_sessions_list.return_value = paginated_sessions
         
         # Override FastAPI dependency
-        app.dependency_overrides[get_history_service] = lambda: mock_history_service
+        app.dependency_overrides[get_session_data_service] = lambda: mock_history_service
         
         response = client.get(
             "/api/v1/history/sessions",
@@ -352,7 +353,7 @@ class TestHistoryControllerEndpoints:
         mock_history_service.get_sessions_list.return_value = empty_paginated
         
         # Override FastAPI dependency
-        app.dependency_overrides[get_history_service] = lambda: mock_history_service
+        app.dependency_overrides[get_session_data_service] = lambda: mock_history_service
         
         response = client.get(
             "/api/v1/history/sessions",
@@ -388,7 +389,7 @@ class TestHistoryControllerEndpoints:
         mock_history_service.get_sessions_list.return_value = empty_paginated
         
         # Override FastAPI dependency
-        app.dependency_overrides[get_history_service] = lambda: mock_history_service
+        app.dependency_overrides[get_session_data_service] = lambda: mock_history_service
         
         response = client.get(
             "/api/v1/history/sessions",
@@ -424,7 +425,7 @@ class TestHistoryControllerEndpoints:
         end_date_us = int(datetime(2024, 1, 31, 23, 59, 59, tzinfo=timezone.utc).timestamp() * 1000000)
 
         # Override FastAPI dependency
-        app.dependency_overrides[get_history_service] = lambda: mock_history_service
+        app.dependency_overrides[get_session_data_service] = lambda: mock_history_service
 
         response = client.get(
             "/api/v1/history/sessions",
@@ -460,7 +461,7 @@ class TestHistoryControllerEndpoints:
         mock_history_service.get_sessions_list.return_value = empty_paginated
         
         # Override FastAPI dependency
-        app.dependency_overrides[get_history_service] = lambda: mock_history_service
+        app.dependency_overrides[get_session_data_service] = lambda: mock_history_service
         
         response = client.get(
             "/api/v1/history/sessions",
@@ -491,7 +492,7 @@ class TestHistoryControllerEndpoints:
         mock_history_service.get_sessions_list.return_value = empty_paginated
         
         # Override FastAPI dependency
-        app.dependency_overrides[get_history_service] = lambda: mock_history_service
+        app.dependency_overrides[get_session_data_service] = lambda: mock_history_service
         
         response = client.get(
             "/api/v1/history/sessions",
@@ -520,7 +521,7 @@ class TestHistoryControllerEndpoints:
     def test_get_sessions_list_search_too_short(self, app, client, mock_history_service):
         """Test search parameter with less than 3 characters (should fail validation)."""
         # Override FastAPI dependency
-        app.dependency_overrides[get_history_service] = lambda: mock_history_service
+        app.dependency_overrides[get_session_data_service] = lambda: mock_history_service
         
         response = client.get(
             "/api/v1/history/sessions",
@@ -541,7 +542,7 @@ class TestHistoryControllerEndpoints:
     def test_get_sessions_list_search_empty_string(self, app, client, mock_history_service):
         """Test search parameter with empty string (should fail validation)."""
         # Override FastAPI dependency
-        app.dependency_overrides[get_history_service] = lambda: mock_history_service
+        app.dependency_overrides[get_session_data_service] = lambda: mock_history_service
         
         response = client.get(
             "/api/v1/history/sessions",
@@ -569,7 +570,7 @@ class TestHistoryControllerEndpoints:
         mock_history_service.get_sessions_list.return_value = empty_paginated
         
         # Override FastAPI dependency
-        app.dependency_overrides[get_history_service] = lambda: mock_history_service
+        app.dependency_overrides[get_session_data_service] = lambda: mock_history_service
         
         response = client.get(
             "/api/v1/history/sessions",
@@ -600,7 +601,7 @@ class TestHistoryControllerEndpoints:
         mock_history_service.get_sessions_list.return_value = empty_paginated
         
         # Override FastAPI dependency
-        app.dependency_overrides[get_history_service] = lambda: mock_history_service
+        app.dependency_overrides[get_session_data_service] = lambda: mock_history_service
         
         response = client.get(
             "/api/v1/history/sessions",
@@ -623,7 +624,7 @@ class TestHistoryControllerEndpoints:
     def test_get_sessions_list_invalid_date_format(self, app, client, mock_history_service):
         """Test sessions list with invalid Unix timestamp format."""
         # Override FastAPI dependency
-        app.dependency_overrides[get_history_service] = lambda: mock_history_service
+        app.dependency_overrides[get_session_data_service] = lambda: mock_history_service
         
         response = client.get(
             "/api/v1/history/sessions",
@@ -653,7 +654,7 @@ class TestHistoryControllerEndpoints:
         mock_history_service.get_sessions_list.return_value = empty_paginated
         
         # Override FastAPI dependency
-        app.dependency_overrides[get_history_service] = lambda: mock_history_service
+        app.dependency_overrides[get_session_data_service] = lambda: mock_history_service
         
         response = client.get("/api/v1/history/sessions")
         
@@ -671,7 +672,7 @@ class TestHistoryControllerEndpoints:
         mock_history_service.get_sessions_list.side_effect = Exception("Service error")
         
         # Override FastAPI dependency
-        app.dependency_overrides[get_history_service] = lambda: mock_history_service
+        app.dependency_overrides[get_session_data_service] = lambda: mock_history_service
         
         response = client.get("/api/v1/history/sessions")
         
@@ -822,7 +823,7 @@ class TestHistoryControllerEndpoints:
         mock_history_service.get_session_summary = AsyncMock(return_value=mock_session_stats)
         
         # Override FastAPI dependency
-        app.dependency_overrides[get_history_service] = lambda: mock_history_service
+        app.dependency_overrides[get_session_data_service] = lambda: mock_history_service
         
         response = client.get("/api/v1/history/sessions/test-session-123")
         
@@ -929,7 +930,7 @@ class TestHistoryControllerEndpoints:
         mock_history_service.get_session_details.return_value = detailed_session
         
         # Override FastAPI dependency
-        app.dependency_overrides[get_history_service] = lambda: mock_history_service
+        app.dependency_overrides[get_session_data_service] = lambda: mock_history_service
         
         response = client.get("/api/v1/history/sessions/test-session")
         
@@ -978,7 +979,7 @@ class TestHistoryControllerEndpoints:
         mock_history_service.get_session_details.return_value = detailed_session
         
         # Override FastAPI dependency
-        app.dependency_overrides[get_history_service] = lambda: mock_history_service
+        app.dependency_overrides[get_session_data_service] = lambda: mock_history_service
         
         response = client.get("/api/v1/history/sessions/test-session")
         
@@ -1055,7 +1056,7 @@ class TestHistoryControllerEndpoints:
         mock_history_service.get_sessions_list.return_value = paginated_sessions
         
         # Override FastAPI dependency
-        app.dependency_overrides[get_history_service] = lambda: mock_history_service
+        app.dependency_overrides[get_session_data_service] = lambda: mock_history_service
         
         response = client.get("/api/v1/history/sessions")
         
@@ -1089,7 +1090,7 @@ class TestHistoryControllerEndpoints:
         mock_history_service.get_session_details.return_value = None
         
         # Override FastAPI dependency
-        app.dependency_overrides[get_history_service] = lambda: mock_history_service
+        app.dependency_overrides[get_session_data_service] = lambda: mock_history_service
         
         response = client.get("/api/v1/history/sessions/non-existent-session")
         
@@ -1106,7 +1107,7 @@ class TestHistoryControllerEndpoints:
         mock_history_service.get_session_details.return_value = None
         
         # Override FastAPI dependency
-        app.dependency_overrides[get_history_service] = lambda: mock_history_service
+        app.dependency_overrides[get_session_data_service] = lambda: mock_history_service
         
         response = client.get("/api/v1/history/sessions/test-session")
         
@@ -1123,7 +1124,7 @@ class TestHistoryControllerEndpoints:
         mock_history_service.get_session_details.side_effect = Exception("Service error")
         
         # Override FastAPI dependency
-        app.dependency_overrides[get_history_service] = lambda: mock_history_service
+        app.dependency_overrides[get_session_data_service] = lambda: mock_history_service
         
         response = client.get("/api/v1/history/sessions/test-session")
         
@@ -1172,7 +1173,7 @@ class TestHistoryControllerEndpoints:
             mock_history_service.get_session.return_value = mock_session
             
             # Override FastAPI dependency
-            app.dependency_overrides[get_history_service] = lambda: mock_history_service
+            app.dependency_overrides[get_session_data_service] = lambda: mock_history_service
             
             response = client.get(f"/api/v1/history/sessions/{session_id}/final-analysis")
             
@@ -1256,7 +1257,7 @@ class TestHistoryControllerEndpoints:
         mock_history_service.get_session_conversation_history.return_value = (mock_conversation, None)
         
         # Override FastAPI dependency
-        app.dependency_overrides[get_history_service] = lambda: mock_history_service
+        app.dependency_overrides[get_session_data_service] = lambda: mock_history_service
         
         response = client.get(
             f"/api/v1/history/sessions/{session_id}/final-analysis",
@@ -1353,7 +1354,7 @@ class TestHistoryControllerEndpoints:
         mock_history_service.get_session_conversation_history.return_value = (session_conversation, chat_conversation)
         
         # Override FastAPI dependency
-        app.dependency_overrides[get_history_service] = lambda: mock_history_service
+        app.dependency_overrides[get_session_data_service] = lambda: mock_history_service
         
         response = client.get(
             f"/api/v1/history/sessions/{session_id}/final-analysis",
@@ -1406,7 +1407,7 @@ class TestHistoryControllerEndpoints:
         mock_history_service.get_session.return_value = mock_session
         
         # Override FastAPI dependency
-        app.dependency_overrides[get_history_service] = lambda: mock_history_service
+        app.dependency_overrides[get_session_data_service] = lambda: mock_history_service
         
         response = client.get(f"/api/v1/history/sessions/{session_id}/final-analysis")
         
@@ -1477,7 +1478,7 @@ class TestHistoryControllerEndpoints:
         mock_history_service.get_session_conversation_history.return_value = (session_conversation, chat_conversation)
         
         # Override FastAPI dependency
-        app.dependency_overrides[get_history_service] = lambda: mock_history_service
+        app.dependency_overrides[get_session_data_service] = lambda: mock_history_service
         
         # Request ONLY chat conversation
         response = client.get(
@@ -1505,7 +1506,7 @@ class TestHistoryControllerEndpoints:
         mock_history_service.get_session.return_value = None
         
         # Override FastAPI dependency
-        app.dependency_overrides[get_history_service] = lambda: mock_history_service
+        app.dependency_overrides[get_session_data_service] = lambda: mock_history_service
         
         response = client.get("/api/v1/history/sessions/non-existent-session/final-analysis")
         
@@ -1528,7 +1529,7 @@ class TestHistoryControllerEndpoints:
         mock_history_service.get_session.side_effect = RuntimeError("Database connection failed")
         
         # Override FastAPI dependency
-        app.dependency_overrides[get_history_service] = lambda: mock_history_service
+        app.dependency_overrides[get_session_data_service] = lambda: mock_history_service
         
         response = client.get("/api/v1/history/sessions/test-session/final-analysis")
         
@@ -1548,7 +1549,7 @@ class TestHistoryControllerEndpoints:
         mock_history_service.get_session.side_effect = Exception("Unexpected error occurred")
         
         # Override FastAPI dependency
-        app.dependency_overrides[get_history_service] = lambda: mock_history_service
+        app.dependency_overrides[get_session_data_service] = lambda: mock_history_service
         
         response = client.get("/api/v1/history/sessions/test-session/final-analysis")
         
@@ -1580,7 +1581,7 @@ class TestHistoryControllerValidation:
     @pytest.fixture
     def mock_history_service(self):
         """Create mock history service."""
-        service = Mock(spec=HistoryService)
+        service = Mock(spec=SessionDataService)
         service.enabled = True
         # Will be set up with proper model below
         return service
@@ -1588,7 +1589,7 @@ class TestHistoryControllerValidation:
     @pytest.mark.unit
     def test_sessions_list_pagination_validation(self, client, mock_history_service):
         """Test pagination parameter validation."""
-        with patch('tarsy.controllers.history_controller.get_history_service', return_value=mock_history_service):
+        with patch('tarsy.controllers.history_controller.get_session_data_service', return_value=mock_history_service):
             # Test negative page number
             response = client.get("/api/v1/history/sessions?page=-1")
             assert response.status_code == 422
@@ -1617,7 +1618,7 @@ class TestHistoryControllerValidation:
         mock_history_service.get_sessions_list.return_value = empty_paginated
         
         # Override FastAPI dependency
-        app.dependency_overrides[get_history_service] = lambda: mock_history_service
+        app.dependency_overrides[get_session_data_service] = lambda: mock_history_service
         
         # Test invalid status - the API doesn't enforce enum validation, so it returns 200
         response = client.get("/api/v1/history/sessions?status=invalid_status")
@@ -1638,7 +1639,7 @@ class TestHistoryControllerValidation:
         mock_history_service.get_session_details.return_value = None
         
         # Override FastAPI dependency
-        app.dependency_overrides[get_history_service] = lambda: mock_history_service
+        app.dependency_overrides[get_session_data_service] = lambda: mock_history_service
         
         # Test session ID with special characters (should be handled)
         response = client.get("/api/v1/history/sessions/session-with-dashes-123")
@@ -1655,7 +1656,7 @@ class TestHistoryControllerValidation:
     def test_date_format_validation_edge_cases(self, app, client, mock_history_service):
         """Test date format validation edge cases."""
         # Override FastAPI dependency
-        app.dependency_overrides[get_history_service] = lambda: mock_history_service
+        app.dependency_overrides[get_session_data_service] = lambda: mock_history_service
         
         # Test timestamps that will actually trigger validation errors
         invalid_timestamps = [
@@ -1695,7 +1696,7 @@ class TestHistoryControllerResponseFormat:
     @pytest.fixture
     def mock_history_service(self):
         """Create mock history service."""
-        service = Mock(spec=HistoryService)
+        service = Mock(spec=SessionDataService)
         service.enabled = True
         service.is_enabled = True
         # Will be set up with proper model below
@@ -1713,7 +1714,7 @@ class TestHistoryControllerResponseFormat:
     @pytest.mark.unit
     def test_sessions_list_response_format(self, app, client):
         """Test that sessions list response matches expected format."""
-        mock_service = Mock(spec=HistoryService)
+        mock_service = Mock(spec=SessionDataService)
         mock_service.enabled = True
         
         # Create proper SessionOverview objects using factory
@@ -1735,7 +1736,7 @@ class TestHistoryControllerResponseFormat:
         mock_service.get_sessions_list.return_value = paginated_sessions
         
         # Override FastAPI dependency
-        app.dependency_overrides[get_history_service] = lambda: mock_service
+        app.dependency_overrides[get_session_data_service] = lambda: mock_service
         
         response = client.get("/api/v1/history/sessions")
         
@@ -1920,7 +1921,7 @@ class TestHistoryControllerResponseFormat:
         mock_history_service.get_session_summary = AsyncMock(return_value=mock_session_stats)
         
         # Override FastAPI dependency
-        app.dependency_overrides[get_history_service] = lambda: mock_history_service
+        app.dependency_overrides[get_session_data_service] = lambda: mock_history_service
         
         response = client.get("/api/v1/history/sessions/test-session")
         
@@ -2000,7 +2001,7 @@ class TestHistoryControllerIntegration:
     @pytest.mark.unit
     def test_complex_filtering_scenario(self, app, client):
         """Test complex filtering scenario with multiple parameters."""
-        mock_service = Mock(spec=HistoryService)
+        mock_service = Mock(spec=SessionDataService)
         mock_service.enabled = True
         from tarsy.models.history_models import PaginatedSessions, PaginationInfo
         empty_paginated = PaginatedSessions(
@@ -2011,7 +2012,7 @@ class TestHistoryControllerIntegration:
         mock_service.get_sessions_list.return_value = empty_paginated
         
         # Override FastAPI dependency
-        app.dependency_overrides[get_history_service] = lambda: mock_service
+        app.dependency_overrides[get_session_data_service] = lambda: mock_service
         
         # Convert dates to unix timestamps in microseconds
         start_date_us = int(datetime(2024, 1, 1, 0, 0, 0, tzinfo=timezone.utc).timestamp() * 1000000)
@@ -2048,14 +2049,14 @@ class TestHistoryControllerIntegration:
     @pytest.mark.unit
     def test_real_world_error_scenarios(self, app, client):
         """Test real-world error scenarios."""
-        mock_service = Mock(spec=HistoryService)
+        mock_service = Mock(spec=SessionDataService)
         mock_service.enabled = True
         
         # Test database timeout scenario
         mock_service.get_sessions_list.side_effect = TimeoutError("Database timeout")
         
         # Override FastAPI dependency
-        app.dependency_overrides[get_history_service] = lambda: mock_service
+        app.dependency_overrides[get_session_data_service] = lambda: mock_service
         
         response = client.get("/api/v1/history/sessions")
         
@@ -2068,7 +2069,7 @@ class TestHistoryControllerIntegration:
     @pytest.mark.unit
     def test_concurrent_request_handling(self, app, client):
         """Test that controller handles concurrent requests properly."""
-        mock_service = Mock(spec=HistoryService)
+        mock_service = Mock(spec=SessionDataService)
         mock_service.enabled = True
         from tarsy.models.history_models import PaginatedSessions, PaginationInfo
         empty_paginated = PaginatedSessions(
@@ -2079,7 +2080,7 @@ class TestHistoryControllerIntegration:
         mock_service.get_sessions_list.return_value = empty_paginated
         
         # Override FastAPI dependency
-        app.dependency_overrides[get_history_service] = lambda: mock_service
+        app.dependency_overrides[get_session_data_service] = lambda: mock_service
         
         # Simulate multiple concurrent requests
         responses = []
@@ -2115,7 +2116,7 @@ class TestDashboardEndpoints:
     @pytest.fixture
     def mock_history_service(self):
         """Create mock history service for dashboard endpoints."""
-        service = Mock(spec=HistoryService)
+        service = Mock(spec=SessionDataService)
         service.enabled = True
         service.is_enabled = True
         
@@ -2169,7 +2170,7 @@ class TestDashboardEndpoints:
         mock_service.get_active_sessions.return_value = [test_session]
         
         # Override dependency
-        app.dependency_overrides[get_history_service] = lambda: mock_service
+        app.dependency_overrides[get_session_data_service] = lambda: mock_service
         
         # Make request
         response = client.get("/api/v1/history/active-sessions")
@@ -2200,7 +2201,7 @@ class TestDashboardEndpoints:
         mock_service.get_active_sessions.return_value = []
         
         # Override dependency
-        app.dependency_overrides[get_history_service] = lambda: mock_service
+        app.dependency_overrides[get_session_data_service] = lambda: mock_service
         
         # Make request
         response = client.get("/api/v1/history/active-sessions")
@@ -2221,7 +2222,7 @@ class TestDashboardEndpoints:
         mock_service.get_active_sessions.side_effect = Exception("Database error")
         
         # Override dependency
-        app.dependency_overrides[get_history_service] = lambda: mock_service
+        app.dependency_overrides[get_session_data_service] = lambda: mock_service
         
         # Make request
         response = client.get("/api/v1/history/active-sessions")
@@ -2252,7 +2253,7 @@ class TestDashboardEndpoints:
         mock_history_service.get_filter_options.return_value = mock_filter_result
         
         # Override dependency
-        app.dependency_overrides[get_history_service] = lambda: mock_history_service
+        app.dependency_overrides[get_session_data_service] = lambda: mock_history_service
         
         # Make request
         response = client.get("/api/v1/history/filter-options")
@@ -2281,7 +2282,7 @@ class TestDashboardEndpoints:
         mock_history_service.get_filter_options.side_effect = Exception("Database error")
         
         # Override dependency
-        app.dependency_overrides[get_history_service] = lambda: mock_history_service
+        app.dependency_overrides[get_session_data_service] = lambda: mock_history_service
         
         # Make request
         response = client.get("/api/v1/history/filter-options")
@@ -2319,7 +2320,7 @@ class TestDashboardEndpoints:
         mock_history_service.get_session_summary = AsyncMock(return_value=session_stats)
         
         # Dependency override
-        app.dependency_overrides[get_history_service] = lambda: mock_history_service
+        app.dependency_overrides[get_session_data_service] = lambda: mock_history_service
         
         # Make request
         response = client.get(f"/api/v1/history/sessions/{session_id}/summary")
@@ -2358,7 +2359,7 @@ class TestDashboardEndpoints:
         mock_history_service.get_session_summary = AsyncMock(return_value=None)
         
         # Dependency override
-        app.dependency_overrides[get_history_service] = lambda: mock_history_service
+        app.dependency_overrides[get_session_data_service] = lambda: mock_history_service
         
         # Make request
         response = client.get(f"/api/v1/history/sessions/{session_id}/summary")
@@ -2382,7 +2383,7 @@ class TestDashboardEndpoints:
         mock_history_service.get_session_summary.side_effect = Exception("Database connection failed")
         
         # Dependency override
-        app.dependency_overrides[get_history_service] = lambda: mock_history_service
+        app.dependency_overrides[get_session_data_service] = lambda: mock_history_service
         
         # Make request
         response = client.get(f"/api/v1/history/sessions/{session_id}/summary")
@@ -2420,7 +2421,7 @@ class TestDashboardEndpoints:
         mock_history_service.get_session_summary = AsyncMock(return_value=mock_summary)
         
         # Dependency override
-        app.dependency_overrides[get_history_service] = lambda: mock_history_service
+        app.dependency_overrides[get_session_data_service] = lambda: mock_history_service
         
         # Make request
         response = client.get(f"/api/v1/history/sessions/{session_id}/summary")
@@ -2472,7 +2473,7 @@ class TestDashboardEndpoints:
         mock_history_service.get_session_summary = AsyncMock(return_value=mock_summary)
         
         # Dependency override
-        app.dependency_overrides[get_history_service] = lambda: mock_history_service
+        app.dependency_overrides[get_session_data_service] = lambda: mock_history_service
         
         # Make request
         response = client.get(f"/api/v1/history/sessions/{session_id}/summary")
@@ -2515,7 +2516,7 @@ class TestDashboardEndpoints:
         mock_history_service.get_session_summary = AsyncMock(return_value=mock_summary)
         
         # Dependency override
-        app.dependency_overrides[get_history_service] = lambda: mock_history_service
+        app.dependency_overrides[get_session_data_service] = lambda: mock_history_service
         
         # Make request
         response = client.get(f"/api/v1/history/sessions/{session_id}/summary")

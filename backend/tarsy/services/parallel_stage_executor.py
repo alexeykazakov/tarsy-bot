@@ -29,7 +29,7 @@ if TYPE_CHECKING:
     from tarsy.models.agent_config import ChainConfigModel, ChainStageConfigModel
     from tarsy.models.db_models import StageExecution
     from tarsy.services.agent_factory import AgentFactory
-    from tarsy.services.history_service import HistoryService
+    from tarsy.services.session_data import SessionDataService
     from tarsy.services.stage_execution_manager import StageExecutionManager
 
 logger = get_module_logger(__name__)
@@ -699,7 +699,7 @@ class ParallelStageExecutor:
         session_mcp_client: MCPClient,
         chain_definition: "ChainConfigModel",
         stage_index: int,
-        history_service: "HistoryService"
+        session_data_service: "SessionDataService"
     ) -> ParallelStageResult:
         """
         Resume a paused parallel stage by re-executing only paused children.
@@ -713,7 +713,7 @@ class ParallelStageExecutor:
             session_mcp_client: Session-scoped MCP client
             chain_definition: Full chain definition
             stage_index: Index of this stage in chain
-            history_service: History service for loading child stage executions
+            session_data_service: Session data service for loading child stage executions
             
         Returns:
             ParallelStageResult with merged results (completed + resumed)
@@ -721,7 +721,7 @@ class ParallelStageExecutor:
         logger.info(f"Resuming parallel stage '{paused_parent_stage.stage_name}'")
         
         # 1. Load all child stage executions
-        children = await history_service.get_parallel_stage_children(
+        children = await session_data_service.get_parallel_stage_children(
             paused_parent_stage.execution_id
         )
         
